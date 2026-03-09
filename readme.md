@@ -20,7 +20,7 @@ Available at `http://localhost:8080`
 cd webserver
 docker compose -f docker-compose-prod.yaml up --build -d
 ```
-Available at `http://localhost:8090`. Stop with `docker compose stop`.
+Available at `http://localhost:8005`. Stop with `docker compose stop`.
 
 ---
 
