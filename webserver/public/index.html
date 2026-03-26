@@ -556,7 +556,7 @@ var stop_recording = {
 
 
     var choice_task = {
-        timeline: [makeStartRecording("acquisition"), pred_section_trial, confidence, start_round, if_node_cons, if_node_flex, feedback, stop_recording, round_end],
+        timeline: [makeStartRecording("acquisition"), pred_section_trial, confidence, start_round, if_node_cons, if_node_flex, feedback, round_end, stop_recording],
         repetitions: DEV_MODE ? DEV_ROUNDS : 24,
         randomize_order: false,
         on_timeline_start: function () {
@@ -579,7 +579,7 @@ var stop_recording = {
 
 
     var transfer = {
-        timeline: [makeStartRecording("transfer"), pred_section_trial, confidence, start_round, if_node_cons, if_node_flex, feedback, stop_recording, round_end],
+        timeline: [makeStartRecording("transfer"), pred_section_trial, confidence, start_round, if_node_cons, if_node_flex, feedback, round_end, stop_recording],
         repetitions: DEV_MODE ? DEV_ROUNDS : 24,
         randomize_order: false,
         on_timeline_start: function () {
@@ -603,7 +603,7 @@ var stop_recording = {
 
 
     var expect_check = { // Section 1-C winner (same for both conditions)
-        timeline: [makeStartRecording("expectcheck"), pred_section_trial, confidence, start_round, if_node_final, feedback, stop_recording, round_end],
+        timeline: [makeStartRecording("expectcheck"), pred_section_trial, confidence, start_round, if_node_final, feedback, round_end, stop_recording],
         repetitions: 1,
         randomize_order: false,
         on_timeline_start: function () {
@@ -991,15 +991,13 @@ var stop_recording = {
             size: DEV_MODE ? DEV_ROUNDS * 2 + 1 : 49
         },
         timeline:
-            [makeStartRecording("seqgen"),
-            {
+            [{
                 type: jsPsychSixArmedBandit,
                 n_trials: DEV_MODE ? DEV_ROUNDS * 2 + 1 : 49,
                 choice_type: jsPsych.timelineVariable('choice_type')
 
             },
-            seq_confidence,
-            stop_recording],
+            seq_confidence],
         on_start: function() {
             const baseLabels = ['A', 'B', 'C', 'D', 'E', 'F'];
             currentShuffledLabels = shuffleArray(baseLabels);
@@ -1035,7 +1033,7 @@ var stop_recording = {
     };
 
     var seq_gen = {
-        timeline: [makeStartRecording("seqgen_instructions"), instructions_seq, stop_recording, seq, seq_end],
+        timeline: [makeStartRecording("seqgen_instructions"), instructions_seq, stop_recording, makeStartRecording("seqgen"), seq, seq_end, stop_recording],
         repetitions: 1,
         randomize_order: false,
         on_start: function () {
