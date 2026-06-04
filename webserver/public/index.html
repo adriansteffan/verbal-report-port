@@ -644,10 +644,6 @@ var stop_recording = {
 
             console.log("Correct Section: ", section_only)
         },
-        on_timeline_finish: function () {
-            sendData(jsPsych.data.get().csv());
-        },
-
     };
 
 
@@ -1297,7 +1293,8 @@ var stop_recording = {
         transfer,
         expect_check,
         seq_gen,
-        createStartRecordingPoint("ruledetection"), rule_det_flex, stop_recording
+        createStartRecordingPoint("ruledetection"), rule_det_flex, stop_recording,
+        { type: jsPsychCallFunction, func: function () { sendData(jsPsych.data.get().csv()); } }
     ]
 
     // Stop recording confirmation dialog before final save

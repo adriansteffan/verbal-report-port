@@ -77,8 +77,8 @@ function deleteOldFiles(directory, minutes) {
                 const shouldDeleteFolder = results.some(result => result !== undefined);
                 var files = fs.readdirSync(path.join(directory));
 
-                // we consider a trial as finished if the trial_data.txt file exists
-                if (shouldDeleteFolder && !files.includes("trial_data.txt")) {
+                // we consider a trial as finished if the trial_data.csv file exists
+                if (shouldDeleteFolder && !files.includes("trial_data.csv")) {
                     fs.rm(directory, { recursive: true }, err => {
                         if (err) {
                             logger.warn(err)
