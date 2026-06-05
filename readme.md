@@ -38,3 +38,14 @@ The `jsPsychSpeechRecording` plugin is at [`/webserver/public/jspsych/dist/plugi
 
 ## Ressources
 Recordings and trial data are saved to the [`ressources`](ressources) folder, in a subfolder per participant (identified by a random UUID).
+
+## Transcription
+Batch-transcribe every `.wav` in `ressources/` (move your data there first). Produces a `transcriptions.csv` (`filename,text`) inside each participant folder.
+
+```bash
+cd webserver
+docker compose run --rm transcribe        
+docker compose run --rm transcribe-gpu # run this instead if on a system with a gpu
+```
+
+Options: `--filter "trial"` (only filenames matching a regex), `--overwrite` (re-transcribe even if `transcriptions.csv` already exists).

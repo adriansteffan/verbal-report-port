@@ -1,0 +1,8 @@
+FROM python:3.11-slim
+
+RUN pip install --no-cache-dir faster-whisper tqdm
+
+WORKDIR /app
+COPY transcribe.py .
+
+ENTRYPOINT ["python", "transcribe.py"]

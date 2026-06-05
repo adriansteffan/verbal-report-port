@@ -13,5 +13,35 @@ services:
     
     restart: always
 
+  transcribe:
+    profiles: ["transcribe"]
+    build:
+      context: ../transcription
+      dockerfile: Dockerfile.cpu
+    volumes:
+      - ../ressources:/data
+      - model-cache:/root/.cache/huggingface
+    environment:
+      - DATA_DIR=/data
 
+  transcribe-gpu:
+    profiles: ["transcribe-gpu"]
+    build:
+      context: ../transcription
+      dockerfile: Dockerfile.gpu
+    volumes:
+      - ../ressources:/data
+      - model-cache:/root/.cache/huggingface
+    environment:
+      - DATA_DIR=/data
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  model-cache:
 
