@@ -28,9 +28,10 @@ winston.add(logger);
 
 
 
-cron.schedule(`${config.TIME_FOR_DELETION_TASK} * * * *`, () => {
-    deleteUnfinishedTrials(config.PATH_TO_RESSOURCES, config.MINUTES_TO_DELETE, logger);
-});
+// Scheduled auto-deletion of unfinished trials disabled for now.
+// cron.schedule(`${config.TIME_FOR_DELETION_TASK} * * * *`, () => {
+//     deleteUnfinishedTrials(config.PATH_TO_RESSOURCES, config.MINUTES_TO_DELETE, logger);
+// });
 
 
 app.listen(config.PORT, () => {
