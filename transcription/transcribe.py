@@ -25,6 +25,9 @@ def find_wav_files(participant_dir, filter_pattern=None):
     for f in sorted(os.listdir(participant_dir)):
         if not f.endswith(".wav"):
             continue
+        if f.endswith("tmp.wav"):
+            # orphan partial upload; the converted .wav counterpart already exists
+            continue
         if regex and not regex.search(f):
             continue
         wav_files.append(os.path.join(participant_dir, f))
