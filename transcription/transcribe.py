@@ -28,9 +28,13 @@ def find_wav_files(participant_dir, filter_pattern=None):
         if f.endswith("tmp.wav"):
             # orphan partial upload; the converted .wav counterpart already exists
             continue
+        full_path = os.path.join(participant_dir, f)
+        if os.path.getsize(full_path) == 0:
+            # interrupted upload — content lives in the WebM *tmp.wav sibling, recoverable separately
+            continue
         if regex and not regex.search(f):
             continue
-        wav_files.append(os.path.join(participant_dir, f))
+        wav_files.append(full_path)
     return wav_files
 
 
