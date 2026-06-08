@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import csv
+import functools
 import os
 import re
 import sys
@@ -40,12 +41,15 @@ def transcribe_faster_whisper(wav_files, model):
     return results
 
 
-def transcribe_qwen_asr(wav_files, model):
-    print(f"  batching {len(wav_files)} file(s)")
-    out = model.transcribe(audio=wav_files)
+def transcribe_qwen_asr(wav_files, model, batch_size=8):
     results = []
-    for wav_path, result in zip(wav_files, out):
-        results.append((os.path.basename(wav_path), result.text.strip()))
+    total = len(wav_files)
+    for start in range(0, total, batch_size):
+        chunk = wav_files[start:start + batch_size]
+        print(f"  batch {start // batch_size + 1}: {len(chunk)} file(s) ({start + len(chunk)}/{total})")
+        out = model.transcribe(audio=chunk)
+        for wav_path, result in zip(chunk, out):
+            results.append((os.path.basename(wav_path), result.text.strip()))
     return results
 
 
@@ -87,6 +91,12 @@ def main():
         choices=["faster-whisper", "qwen-asr"],
         default=None,
         help="Force a specific backend (auto-detected if omitted)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+        help="Max wavs per qwen-asr inference call (lower if OOM, higher for throughput). Ignored by faster-whisper.",
     )
     args = parser.parse_args()
 
@@ -132,7 +142,7 @@ def main():
         model = Qwen3ASRModel.from_pretrained(
             model_name, dtype=torch.bfloat16, device_map="cuda:0"
         )
-        transcribe_fn = transcribe_qwen_asr
+        transcribe_fn = functools.partial(transcribe_qwen_asr, batch_size=args.batch_size)
 
     print(f"Backend: {backend}")
     print(f"Processing {len(participant_dirs)} participant(s)\n")
