@@ -5,7 +5,7 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegressionCV
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import average_precision_score, roc_auc_score
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import make_pipeline
@@ -120,12 +120,15 @@ if __name__ == "__main__":
             Xd = l2norm(X[:, :dim])  # only take embeddings needed for mrl
             for name, score_fn, do_perm in [
                 ("prototype", prototype_loo, True),
-                ("logistic", logistic_loo, False),
-                ("svm", svm_loo, False),
+                ("logistic", logistic_loo, True),
+                ("svm", svm_loo, True),
                 ("knn", knn_loo, True),
             ]:
                 scores = score_fn(Xd, y)
                 auc = roc_auc_score(y, scores)
+                aucpr = average_precision_score(y, scores)  # PR-AUC; chance = pos_rate
+                # opt(imistic) CI: resamples the fixed LOO scores without refitting
+                # the model, so it omits fit variance and runs narrow.
                 lo, hi = bootstrap_ci(
                     lambda idx: roc_auc_score(y[idx], scores[idx]), len(y)
                 )
@@ -136,9 +139,11 @@ if __name__ == "__main__":
                         "dim": dim,
                         "model": name,
                         "n": len(y),
+                        "pos_rate": y.mean(),
                         "auc": auc,
-                        "ci_lo": lo,
-                        "ci_hi": hi,
+                        "opt_ci_lo": lo,
+                        "opt_ci_hi": hi,
+                        "aucpr": aucpr,
                         "perm_p": p,
                     }
                 )
