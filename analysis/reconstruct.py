@@ -18,18 +18,18 @@ def l2norm(X):
 
 def utterance_text(participant, filename):
     df = pd.read_csv(RESSOURCES / participant / "transcriptions.csv")
-    m = df.loc[df["filename"] == filename, "text"]
-    return m.iloc[0] if len(m) and isinstance(m.iloc[0], str) else ""
+    texts = df["text"][df["filename"] == filename]  # column first -> always a Series
+    return texts.iloc[0] if len(texts) and isinstance(texts.iloc[0], str) else ""
 
 
 def exemplars(scope="transfer", dim=512, n=15):
-    keep = set(participants.analyzable())
+    keep = participants.analyzable()
     aware = vr.set_index("participant")["aware"].to_dict()
-    utt = EMB[(EMB["kind"] == "utterance") & EMB["participant"].isin(keep)].reset_index(
-        drop=True
-    )
-    utt = utt.assign(aware=utt["participant"].map(aware))
-    U = l2norm(np.vstack(utt["embedding"].to_numpy())[:, :dim])
+    utt = EMB.loc[
+        (EMB["kind"] == "utterance") & EMB["participant"].isin(keep)
+    ].reset_index(drop=True)
+    utt = utt.assign(aware=utt["participant"].map(lambda p: aware.get(p, float("nan"))))
+    U = l2norm(np.array(utt["embedding"].tolist())[:, :dim])
 
     phase_mask = True if scope == "full" else (utt["phase"] == scope)
     in_scope = (utt["aware"].notna() & phase_mask).to_numpy()

@@ -25,7 +25,7 @@ def is_english(text: str) -> bool:
     if not text:
         return False
     try:
-        return any(l.lang == "en" and l.prob > 0.5 for l in detect_langs(text))
+        return any(d.lang == "en" and d.prob > 0.5 for d in detect_langs(text))
     except Exception:  # langdetect raises on undetectable strings
         return False
 
@@ -37,7 +37,7 @@ def english_char_count(participant: str) -> int:
     if not f.exists():
         return 0
     df = pd.read_csv(f)
-    df = df[~df["filename"].str.contains("ruledetection")]
+    df = df.loc[~df["filename"].str.contains("ruledetection")]
     return sum(len(t.strip()) for t in df["text"].dropna() if is_english(t))
 
 
@@ -62,7 +62,7 @@ def analyzable(participants: list[str] | None = None) -> list[str]:
 
 def filter_df(df: pd.DataFrame, col: str = "participant") -> pd.DataFrame:
     """Drop rows whose participant is a mic-failure or labmate-excluded."""
-    return df[~df[col].isin(mic_failures() | excluded())]
+    return df.loc[~df[col].isin(list(mic_failures() | excluded()))]
 
 
 if __name__ == "__main__":

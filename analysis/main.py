@@ -15,7 +15,7 @@ client = OpenAI(
 )
 
 MODEL = "qwen3.6:27b"
-N_PARTICIPANTS = None  # How many participants to run, None for all
+N_PARTICIPANTS_TO_PROCESS = None  # How many participants to run, None for all
 N_RUNS = 5  # judgements per participant, one per seed (long format: N_RUNS rows each)
 RESSOURCES = HERE.parent / "ressources"
 OUT = HERE / "output" / "letter_rule.csv"
@@ -77,7 +77,7 @@ rows = (
     pd.read_csv(OUT).to_dict("records") if OUT.exists() else []
 )  # resume previous run
 done = {(row["participant"], row["seed"]) for row in rows}
-for csv in sorted(RESSOURCES.glob("*/transcriptions.csv"))[:N_PARTICIPANTS]:
+for csv in sorted(RESSOURCES.glob("*/transcriptions.csv"))[:N_PARTICIPANTS_TO_PROCESS]:
     df = pd.read_csv(csv).sort_values("filename", ignore_index=True)
     # only judge speech from before the rule was revealed on screen,
     # i.e. up to the end of the sequence generation task
@@ -98,12 +98,12 @@ for csv in sorted(RESSOURCES.glob("*/transcriptions.csv"))[:N_PARTICIPANTS]:
             messages=[
                 {"role": "user", "content": PROMPT.format(transcript=transcript)}
             ],
-            response_format=RESPONSE_FORMAT,
+            response_format=RESPONSE_FORMAT,  # pyright: ignore[reportArgumentType]
             max_tokens=8000,  # thinking models need headroom
             seed=seed,
             temperature=0.6,
         )
-        content = response.choices[0].message.content.split("</think>")[-1]
+        content = (response.choices[0].message.content or "").split("</think>")[-1]
         judgement = json.loads(content[content.find("{") : content.rfind("}") + 1])
         rows.append({"participant": csv.parent.name, "seed": seed, **judgement})
         print(

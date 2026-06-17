@@ -62,10 +62,10 @@ def scope_utterances(participant: str, scope: str) -> list[str]:
     df = pd.read_csv(RESSOURCES / participant / "transcriptions.csv").sort_values(
         "filename"
     )
-    df = df[~df["filename"].str.contains("ruledetection")]
+    df = df.loc[~df["filename"].str.contains("ruledetection")]
     if scope != "full":
         phase = df["filename"].str.extract(r"audio_\d+_(?P<phase>.+)_\d+\.wav")["phase"]
-        df = df[phase.values == scope]
+        df = df.loc[phase.values == scope]
     return [t for t in df["text"].fillna("").str.strip() if participants.is_english(t)]
 
 
@@ -134,9 +134,8 @@ def model():
 
 
 def loo(X, y):
-    return cross_val_predict(model(), X, y, cv=LeaveOneOut(), method="predict_proba")[
-        :, 1
-    ]
+    out = cross_val_predict(model(), X, y, cv=LeaveOneOut(), method="predict_proba")
+    return np.asarray(out)[:, 1]
 
 
 def bootstrap_ci(y, scores, n=2000):
@@ -178,7 +177,7 @@ def contrastive_words(scope, top=12, min_count=8):
         - np.log((unaware_w[w] + 1) / (tu - unaware_w[w] + 1))
         for w in vocab
     }
-    ranked = sorted(logodds, key=logodds.get)
+    ranked = sorted(logodds, key=lambda w: logodds[w])
     return [(w, round(logodds[w], 2)) for w in ranked[-top:][::-1]], [
         (w, round(logodds[w], 2)) for w in ranked[:top]
     ]

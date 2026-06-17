@@ -1,9 +1,9 @@
 import warnings
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pandas as pd
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.linear_model import LogisticRegressionCV
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
@@ -23,7 +23,7 @@ vr = pd.read_csv(HERE / "df_vr.csv")
 
 SCOPES = ["transfer", "acquisition", "seqgen", "full"]
 DIMS = [256, 512, 1024, 2048, 4096]  # full MRL sweep, only with --sweep
-DEFAULT_DIM = 512  # AUC is flat across dims, so default to this single one
+DEFAULT_DIM = 512
 K_NEIGHBORS = 5
 N_PERM = 200
 RNG = np.random.default_rng(0)
@@ -35,12 +35,12 @@ def l2norm(X: np.ndarray) -> np.ndarray:
 
 def scope_matrix(scope: str):
     """X (n x 4096), y (aware) for analyzable participants having this scope."""
-    keep = set(participants.analyzable())
+    keep = participants.analyzable()
     df = EMB[(EMB["kind"] == scope) & (EMB["participant"].isin(keep))]
     df = df.merge(vr[["participant", "aware"]], on="participant").dropna(
         subset=["aware"]
     )
-    return np.vstack(df["embedding"].to_numpy()), df["aware"].to_numpy().astype(int)
+    return np.array(df["embedding"].tolist()), df["aware"].to_numpy().astype(int)
 
 
 def prototype_loo(X: np.ndarray, y: np.ndarray) -> np.ndarray:
@@ -56,8 +56,12 @@ def prototype_loo(X: np.ndarray, y: np.ndarray) -> np.ndarray:
     return scores
 
 
-def loo_scores(clf, X, y, method="predict_proba") -> np.ndarray:
-    out = cross_val_predict(clf, X, y, cv=LeaveOneOut(), method=method, n_jobs=-1)
+def loo_scores(
+    clf, X, y, method: Literal["predict_proba", "decision_function"] = "predict_proba"
+) -> np.ndarray:
+    out = np.asarray(
+        cross_val_predict(clf, X, y, cv=LeaveOneOut(), method=method, n_jobs=-1)
+    )
     return out if out.ndim == 1 else out[:, 1]
 
 
@@ -75,13 +79,6 @@ def svm_loo(X, y):  # linear SVM, margin as the score
     return loo_scores(
         make_pipeline(StandardScaler(), SVC(kernel="linear")), X, y, "decision_function"
     )
-
-
-def lda_loo(X, y):  # shrinkage LDA (Ledoit-Wolf), the p >> n decoding standard
-    clf = make_pipeline(
-        StandardScaler(), LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto")
-    )
-    return loo_scores(clf, X, y)
 
 
 def knn_loo(X, y):  # cosine kNN; X is already L2-normalized
@@ -120,16 +117,13 @@ if __name__ == "__main__":
     for scope in SCOPES:
         X, y = scope_matrix(scope)
         for dim in dims:
-            Xd = l2norm(X[:, :dim])
-            for name, score_fn, do_perm, max_dim in [
-                ("prototype", prototype_loo, True, None),
-                ("logistic", logistic_loo, False, None),
-                ("svm", svm_loo, False, None),
-                ("lda", lda_loo, False, 512),
-                ("knn", knn_loo, False, None),
+            Xd = l2norm(X[:, :dim])  # only take embeddings needed for mrl
+            for name, score_fn, do_perm in [
+                ("prototype", prototype_loo, True),
+                ("logistic", logistic_loo, False),
+                ("svm", svm_loo, False),
+                ("knn", knn_loo, True),
             ]:
-                if max_dim and dim > max_dim:
-                    continue
                 scores = score_fn(Xd, y)
                 auc = roc_auc_score(y, scores)
                 lo, hi = bootstrap_ci(

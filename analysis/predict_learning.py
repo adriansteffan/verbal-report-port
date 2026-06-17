@@ -17,7 +17,7 @@ client = OpenAI(
 )
 
 MODEL = "qwen3.6:27b"
-N_PARTICIPANTS = None  # How many participants to run, None for all
+N_PARTICIPANTS_TO_PROCESS = None  # How many participants to run, None for all
 N_RUNS = 5
 RESSOURCES = HERE.parent / "ressources"
 OUT = HERE / "output" / "predict_learning.csv"
@@ -71,7 +71,7 @@ Transcript:
 def acquisition_text(csv: Path) -> str:
     df = pd.read_csv(csv).sort_values("filename")
     phase = df["filename"].str.extract(r"audio_\d+_(?P<phase>.+)_\d+\.wav")["phase"]
-    texts = df.loc[phase.values == "acquisition", "text"].dropna()
+    texts = df["text"][phase.values == "acquisition"].dropna()  # column first -> Series
     return "\n\n".join(
         t for t in (str(x).strip() for x in texts) if participants.is_english(t)
     )
@@ -80,7 +80,7 @@ def acquisition_text(csv: Path) -> str:
 OUT.parent.mkdir(exist_ok=True)
 rows = pd.read_csv(OUT).to_dict("records") if OUT.exists() else []  # resume
 done = {(row["participant"], row["seed"]) for row in rows}
-for csv in sorted(RESSOURCES.glob("*/transcriptions.csv"))[:N_PARTICIPANTS]:
+for csv in sorted(RESSOURCES.glob("*/transcriptions.csv"))[:N_PARTICIPANTS_TO_PROCESS]:
     transcript = acquisition_text(csv)
     if len(transcript) < 200:  # too little acquisition speech to predict from
         print(f"skipping {csv.parent.name}: only {len(transcript)} acquisition chars")
@@ -93,12 +93,12 @@ for csv in sorted(RESSOURCES.glob("*/transcriptions.csv"))[:N_PARTICIPANTS]:
             messages=[
                 {"role": "user", "content": PROMPT.format(transcript=transcript)}
             ],
-            response_format=RESPONSE_FORMAT,
+            response_format=RESPONSE_FORMAT,  # pyright: ignore[reportArgumentType]
             max_tokens=8000,  # thinking models need headroom
             seed=seed,
             temperature=0.6,
         )
-        content = response.choices[0].message.content.split("</think>")[-1]
+        content = (response.choices[0].message.content or "").split("</think>")[-1]
         prediction = json.loads(content[content.find("{") : content.rfind("}") + 1])
         rows.append({"participant": csv.parent.name, "seed": seed, **prediction})
         print(

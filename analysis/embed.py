@@ -12,7 +12,7 @@ HERE = Path(__file__).resolve().parent
 RESSOURCES = HERE.parent / "ressources"
 OUT = HERE / "output" / "embeddings.parquet"
 MODEL = "qwen3-embedding:8b"
-N_PARTICIPANTS = None  # limit for testing, None for all
+N_PARTICIPANTS_TO_PROCESS = None  # limit for testing, None for all
 
 
 load_dotenv(HERE / ".env")
@@ -32,30 +32,34 @@ def embed(texts: list[str]) -> list[list[float]]:
     ]
 
 
-def texts_to_embed(participant: str) -> list[dict]:
+def get_texts_to_embed(participant: str) -> list[dict]:
     """Metadata + text for one participant's utterances and four scopes."""
     df = pd.read_csv(RESSOURCES / participant / "transcriptions.csv").sort_values(
         "filename"
     )
-    df = df[~df["filename"].str.contains("ruledetection")]
+    df = df.loc[~df["filename"].str.contains("ruledetection")]
     parsed = df["filename"].str.extract(r"audio_\d+_(?P<phase>.+)_(?P<idx>\d+)\.wav")
-    offset = {"acquisition": 0, "transfer": 24}  # global round = idx + offset
+    offset = {
+        "acquisition": 0,
+        "transfer": 24,
+    }  # global round = idx + offset; NaN otherwise
     df = df.assign(
-        phase=parsed["phase"].values,
-        round=parsed["idx"].astype(int).values + parsed["phase"].map(offset).values,
+        phase=parsed["phase"].to_numpy(),
+        round=parsed["idx"].astype(int).to_numpy()
+        + parsed["phase"].map(offset).to_numpy(),
         text=df["text"].fillna("").str.strip(),
     )
-    df = df[df["text"].map(participants.is_english)]
+    df = df.loc[df["text"].map(participants.is_english)]
 
     rows = [
         {
             "kind": "utterance",
-            "phase": r.phase,
-            "round": r.round,
-            "key": r.filename,
-            "text": r.text,
+            "phase": r["phase"],
+            "round": r["round"],
+            "key": r["filename"],
+            "text": r["text"],
         }
-        for r in df.itertuples()
+        for r in df.to_dict("records")
     ]
     scopes = {
         "full": df["text"],
@@ -86,9 +90,9 @@ if __name__ == "__main__":
     folders = sorted(
         p.name for p in RESSOURCES.iterdir() if (p / "transcriptions.csv").exists()
     )
-    for pid in folders[:N_PARTICIPANTS]:
+    for pid in folders[:N_PARTICIPANTS_TO_PROCESS]:
         rows = [
-            r for r in texts_to_embed(pid) if (pid, r["kind"], r["key"]) not in done
+            r for r in get_texts_to_embed(pid) if (pid, r["kind"], r["key"]) not in done
         ]
         if not rows:
             continue

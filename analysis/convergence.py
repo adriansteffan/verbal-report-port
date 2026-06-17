@@ -30,7 +30,7 @@ def bootstrap_ci(stat, n_units, n=2000, level=0.95, seed=0):
 
 
 if __name__ == "__main__":
-    keep = set(participants.analyzable())
+    keep = participants.analyzable()
     scored = labels.assign(score=labels["rule_evidence"].map(SCORE))
     scored = scored[scored["participant"].isin(keep)]
 
