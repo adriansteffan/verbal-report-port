@@ -6,6 +6,7 @@ from extractors.taxonomy.coders import Coder
 from extractors.taxonomy.levels import Level
 from extractors.taxonomy.scopes import Scope
 from extractors.taxonomy.segments import Segmenter
+from utils import llm
 
 
 class TaxonomyExtractor(FeatureExtractor):
@@ -28,12 +29,10 @@ class TaxonomyExtractor(FeatureExtractor):
     def _extract(self, participant: str) -> dict[str, float]:
         units = self.segments.split(self.scope.select(participant))
         if units:
-            scores = self.coder.score(
-                units,
-                self.segments.prompt_granularity,
-                self.config(),  # drill down in order to reconstruct from cache later during inspection
-                participant,
-            )
+            # provenance is set here because this is the one place that knows
+            # both the config and the participant; llm.judge reads it
+            with llm.provenance(self.config(), participant):
+                scores = self.coder.score(units, self.segments.prompt_granularity)
         else:  # participant said nothing in this scope
             scores = np.zeros((1, len(codebook.categories())))
         return self.level.report(self.segments.pool(scores))

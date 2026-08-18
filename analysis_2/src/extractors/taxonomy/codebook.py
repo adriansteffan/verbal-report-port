@@ -35,14 +35,21 @@ def clusters() -> dict[str, list[str]]:
     """Cluster -> its categories. Cluster scores are pooled from these"""
     t = _table()
     t = t[t["Category"] != ESCAPE]
-    return {c: g["Category"].tolist() for c, g in t.groupby("Cluster", sort=False)}
+    return {
+        str(cluster): list(group["Category"])
+        for cluster, group in t.groupby("Cluster", sort=False)
+    }
 
 
 @functools.cache
 def _column(name: str) -> dict[str, str]:
     """category -> value lookup"""
-    t = _table().set_index("Category")[name]
-    return {k: ("" if pd.isna(v) else str(v)) for k, v in t.items()}
+    t = _table()
+    # anything that is not a string is a blank cell, which pandas reads as NaN
+    return {
+        str(category): value if isinstance(value, str) else ""
+        for category, value in zip(t["Category"], t[name])
+    }
 
 
 def prompt(category: str, prompt_granularity: str) -> str:

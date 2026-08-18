@@ -1,5 +1,7 @@
 """Shared client for LLM extracted features."""
 
+import contextlib
+import contextvars
 import hashlib
 import json
 import os
@@ -36,19 +38,35 @@ _db.execute(
 )
 
 
+# Who is asking. Provenance is observability, not analysis, so it travels out
+# of band rather than through the signature of every coder that would only
+# forward it. Empty when judge() is called outside an extractor.
+_provenance: contextvars.ContextVar[tuple[str, str]] = contextvars.ContextVar(
+    "provenance", default=("", "")
+)
+
+
+@contextlib.contextmanager
+def provenance(config: str, participant: str):
+    token = _provenance.set((config, participant))
+    try:
+        yield
+    finally:
+        _provenance.reset(token)
+
+
 def judge(
     messages: list[dict],
     response_format: dict,
     seed: int = 0,
     model: str = DEFAULT_MODEL,
-    config: str = "",
-    participant: str = "",
 ) -> dict:
 
     key = hashlib.sha256(
         json.dumps([model, messages, response_format, seed], sort_keys=True).encode()
     ).hexdigest()
 
+    config, participant = _provenance.get()
     if config or participant:
         _db.execute(
             "INSERT OR IGNORE INTO calls VALUES (?, ?, ?)", (key, config, participant)

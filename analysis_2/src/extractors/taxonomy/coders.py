@@ -45,32 +45,16 @@ class Coder(BaseEstimator, ABC):
         self.model = model
 
     @abstractmethod
-    def score(
-        self,
-        units: list[str],
-        prompt_granularity: str,
-        config: str = "",
-        participant: str = "",
-    ) -> np.ndarray: ...
+    def score(self, units: list[str], prompt_granularity: str) -> np.ndarray: ...
 
-    def _walk(
-        self,
-        units: list[str],
-        prompt,
-        response_format: dict,
-        seed: int,
-        config: str = "",
-        participant: str = "",
-    ) -> list[dict]:
+    def _walk(self, units, prompt, response_format, seed) -> list[dict]:
         """Should be called by score(). One pass over the units.
         With memory on, each answer stays in context for the next unit"""
         history: list[dict] = []
         replies = []
         for unit in units:
             messages = history + [{"role": "user", "content": prompt(unit)}]
-            reply = llm.judge(
-                messages, response_format, seed, self.model, config, participant
-            )
+            reply = llm.judge(messages, response_format, seed, self.model)
             replies.append(reply)
             if self.memory:
                 history = messages + [
@@ -100,13 +84,7 @@ class Binary(Coder):
     instead of len(units) * len(categories), but loses cross-category
     consistency. (might want to change later, but this is too expensive anyways)"""
 
-    def score(
-        self,
-        units: list[str],
-        prompt_granularity: str,
-        config: str = "",
-        participant: str = "",
-    ) -> np.ndarray:
+    def score(self, units: list[str], prompt_granularity: str) -> np.ndarray:
         categories = codebook.categories()
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
@@ -116,8 +94,6 @@ class Binary(Coder):
                     lambda u, c=category: _binary_prompt(u, c, prompt_granularity),
                     BINARY_FORMAT,
                     seed,
-                    config,
-                    participant,
                 )
                 out[:, j] += [bool(r["applies"]) for r in replies]
         return out / self.n_seeds
@@ -188,13 +164,7 @@ class TopK(Coder):
             },
         }
 
-    def score(
-        self,
-        units: list[str],
-        prompt_granularity: str,
-        config: str = "",
-        participant: str = "",
-    ) -> np.ndarray:
+    def score(self, units: list[str], prompt_granularity: str) -> np.ndarray:
         categories = codebook.categories()
         index = {c: j for j, c in enumerate(categories)}
         out = np.zeros((len(units), len(categories)))
@@ -204,8 +174,6 @@ class TopK(Coder):
                 lambda u: _topk_prompt(u, self.k, prompt_granularity),
                 self._format(),
                 seed,
-                config,
-                participant,
             )
             for i, reply in enumerate(replies):
                 for picked in reply["categories"]:

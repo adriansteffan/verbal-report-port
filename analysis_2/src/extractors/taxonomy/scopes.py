@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 
 from sklearn.base import BaseEstimator
+
 from utils import data
 
 LAST_ACQUISITION_ROUND = 24
