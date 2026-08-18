@@ -10,4 +10,5 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "scikit-learn>=1.9.0",
     "openpyxl>=3.1.5",  # never imported: the engine pd.read_excel needs for the codebook
+    "tqdm>=4.70.0",
 ]

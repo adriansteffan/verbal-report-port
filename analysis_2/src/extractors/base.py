@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+from tqdm import tqdm
 
 # In memory feature vector cache keyed on (extractor config, participant)
 _CACHE: dict = {}
@@ -20,12 +21,13 @@ class FeatureExtractor(BaseEstimator, TransformerMixin, ABC):
     def transform(self, X) -> np.ndarray:
         return self.frame(np.ravel(X)).to_numpy(dtype=float)
 
-    def frame(self, participants) -> pd.DataFrame:
+    def frame(self, participants, progress: bool = False) -> pd.DataFrame:
         """Named feature matrix, participants x features. transform() drops the
         names for sklearn but this keeps them, for export and for reading."""
         participants = list(participants)
+        bar = tqdm(participants, desc="  extracting", unit="p", disable=not progress)
         # via DataFrame so columns align by feature name, not by dict order
-        return pd.DataFrame([self._cached(p) for p in participants], index=participants)
+        return pd.DataFrame([self._cached(p) for p in bar], index=participants)
 
     def config(self) -> str:
         """The full nested config, as sklearn renders it. Called through the

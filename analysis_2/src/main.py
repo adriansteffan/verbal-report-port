@@ -1,56 +1,72 @@
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.dummy import DummyClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
 
+import pipeline
 from extractors.random import RandomFeatureExtractor
 from pipeline import evaluate
 
-### Chance baseline, no LLM calls
+pipeline.PROGRESS = True  # per-participant bars while extracting
+
+CLASSIFIERS = [
+    DummyClassifier(strategy="uniform"),
+    make_pipeline(StandardScaler(), LogisticRegression(class_weight="balanced")),
+    make_pipeline(StandardScaler(), SVC(kernel="linear", class_weight="balanced")),
+    LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto"),
+    GaussianNB(),
+    RandomForestClassifier(
+        n_estimators=100,
+        max_depth=3,
+        min_samples_leaf=5,
+        random_state=0,
+        class_weight="balanced",
+    ),
+]
+
 
 evaluate(make_pipeline(RandomFeatureExtractor(), DummyClassifier(strategy="uniform")))
 
 
-### The taxonomy extractor. Four independent choices, each option carrying only
-### the settings that apply to it. Every LLM call is cached in
-### output/llm_cache.sqlite, so re-runs are free and only new (prompt, seed)
-### pairs cost time. Scout with limit= and n_seeds=1 before paying for a config.
+from extractors.taxonomy.coders import TopK
+from extractors.taxonomy.extractor import TaxonomyExtractor
+from extractors.taxonomy.levels import Categories, Clusters
+from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
+from extractors.taxonomy.segments import Transcript
+from pipeline import features
 
-# from sklearn.ensemble import RandomForestClassifier
-#
-# from extractors.taxonomy.levels import Categories, Clusters
-# from extractors.taxonomy.coders import Binary, TopK
-# from extractors.taxonomy.extractor import TaxonomyExtractor
-# from extractors.taxonomy.segments import Groups, Transcript, Utterances
-# from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
-#
-# evaluate(
-#     make_pipeline(
-#         TaxonomyExtractor(
-#             scope=Acquisition(),
-#             segments=Transcript(),
-#             coder=TopK(k=3, n_seeds=1),
-#             level=Categories(),
-#         ),
-#         RandomForestClassifier(random_state=0),
-#     ),
-#     limit=10,
-# )
+for scope in [Acquisition(), UntilDiscovery()]:
+    for level in [Categories(), Clusters()]:
+        features(TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level))
 
 
-### Sweeping: nested options expose sklearn param paths, e.g. coder__k
+# for scope in [Acquisition(), UntilDiscovery()]:
+#     for level in [Categories(), Clusters()]:
+#         extractor = TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level)
+#         features(extractor)
+#         for classifier in CLASSIFIERS:
+#             evaluate(make_pipeline(extractor, classifier))
 
-# MODELS = ["qwen3.6:27b", "qwen3.5:35b-a3b", "gemma4:31b"]  # chat models on the endpoint
-#
-# for model in MODELS:
+
+# for scope in [Acquisition(), UntilDiscovery()]:
+#     for segments in [Transcript(), Groups(size=6)]:
+#         for level in [Categories(), Clusters()]:
+#             features(TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5), level))
+
+
+# for scope in [Acquisition(), UntilDiscovery()]:
 #     for level in [Categories(), Clusters(across="max")]:
-#         for coder in [TopK(k=1, model=model), TopK(k=3, model=model), Binary(model=model)]:
-#             evaluate(
-#                 make_pipeline(
-#                     TaxonomyExtractor(
-#                         scope=UntilDiscovery(unaware_extra_rounds=12),
-#                         segments=Groups(size=6, pooling="max"),
-#                         coder=coder,
-#                         level=level,
-#                     ),
-#                     RandomForestClassifier(random_state=0),
-#                 )
-#             )
+#         # Transcript makes one unit, so it has nothing to pool
+#         segmenters = [Transcript()] + [
+#             Groups(size=6, pooling=p) for p in ["max", "mean"]
+#         ]
+#         for segments in segmenters:
+#             extractor = TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5), level)
+#             for classifier in CLASSIFIERS:
+#                 evaluate(make_pipeline(extractor, classifier), n_permutations=1000)
+
+# TODO: version that uses memory with a subset of the grid to check
