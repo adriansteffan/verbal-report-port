@@ -1,4 +1,5 @@
 {
   "python.analysis.diagnosticMode": "workspace",
-  "python.analysis.include": ["analysis"]
+  "python.analysis.include": ["analysis", "analysis_2"],
+  "python.analysis.extraPaths": ["analysis", "analysis_2"]
 }
