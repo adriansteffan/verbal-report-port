@@ -14,18 +14,18 @@ from pipeline import evaluate
 pipeline.PROGRESS = True  # per-participant bars while extracting
 
 CLASSIFIERS = [
-    DummyClassifier(strategy="uniform"),
+    # DummyClassifier(strategy="uniform"),
     make_pipeline(StandardScaler(), LogisticRegression(class_weight="balanced")),
     make_pipeline(StandardScaler(), SVC(kernel="linear", class_weight="balanced")),
     LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto"),
     GaussianNB(),
-    RandomForestClassifier(
-        n_estimators=100,
-        max_depth=3,
-        min_samples_leaf=5,
-        random_state=0,
-        class_weight="balanced",
-    ),
+    # RandomForestClassifier(
+    #   n_estimators=100,
+    #   max_depth=3,
+    #   min_samples_leaf=5,
+    #   random_state=0,
+    #   class_weight="balanced",
+    # ),
 ]
 
 
@@ -36,26 +36,26 @@ from extractors.taxonomy.coders import TopK
 from extractors.taxonomy.extractor import TaxonomyExtractor
 from extractors.taxonomy.levels import Categories, Clusters
 from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
-from extractors.taxonomy.segments import Transcript
+from extractors.taxonomy.segments import Groups, Transcript
 from pipeline import features
 
+# for scope in [Acquisition(), UntilDiscovery()]:
+#    for level in [Categories(), Clusters()]:
+#        features(TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level))
+
+
+# for scope in [Acquisition(), UntilDiscovery()]:
+#    for level in [Categories(), Clusters()]:
+#        extractor = TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level)
+#        features(extractor)
+#        for classifier in CLASSIFIERS:
+#            evaluate(make_pipeline(extractor, classifier), n_permutations=1000)
+
+
 for scope in [Acquisition(), UntilDiscovery()]:
-    for level in [Categories(), Clusters()]:
-        features(TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level))
-
-
-# for scope in [Acquisition(), UntilDiscovery()]:
-#     for level in [Categories(), Clusters()]:
-#         extractor = TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level)
-#         features(extractor)
-#         for classifier in CLASSIFIERS:
-#             evaluate(make_pipeline(extractor, classifier))
-
-
-# for scope in [Acquisition(), UntilDiscovery()]:
-#     for segments in [Transcript(), Groups(size=6)]:
-#         for level in [Categories(), Clusters()]:
-#             features(TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5), level))
+    for segments in [Transcript(), Groups(size=6)]:
+        for level in [Categories(), Clusters()]:
+            features(TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5), level))
 
 
 # for scope in [Acquisition(), UntilDiscovery()]:

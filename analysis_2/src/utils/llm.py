@@ -29,18 +29,13 @@ _db.execute(
 )
 
 
-# which (config, participant) used which call. Separate from `cache` because
-# the same call is shared whenever two configs ask the same question - keying it
-# on the content is what makes that sharing possible, and this records the rest.
+# which (config, participant) used which call, for potential reconstruction
 _db.execute(
     "CREATE TABLE IF NOT EXISTS calls (key TEXT, config TEXT, participant TEXT,"
     " PRIMARY KEY (key, config, participant))"
 )
 
 
-# Who is asking. Provenance is observability, not analysis, so it travels out
-# of band rather than through the signature of every coder that would only
-# forward it. Empty when judge() is called outside an extractor.
 _provenance: contextvars.ContextVar[tuple[str, str]] = contextvars.ContextVar(
     "provenance", default=("", "")
 )
@@ -71,7 +66,7 @@ def judge(
         _db.execute(
             "INSERT OR IGNORE INTO calls VALUES (?, ?, ?)", (key, config, participant)
         )
-        _db.commit()  # a cache hit commits nothing else, so this would be lost
+        _db.commit()  # bookkeeping
 
     hit = _db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone()
 
@@ -82,7 +77,7 @@ def judge(
             model=model,
             messages=messages,  # pyright: ignore[reportArgumentType]
             response_format=response_format,  # pyright: ignore[reportArgumentType]
-            max_tokens=8000,  # thinking models need headroom
+            max_tokens=8000,
             seed=seed,
             temperature=0.6,
         )

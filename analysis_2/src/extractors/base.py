@@ -25,15 +25,18 @@ class FeatureExtractor(BaseEstimator, TransformerMixin, ABC):
         """Named feature matrix, participants x features. transform() drops the
         names for sklearn but this keeps them, for export and for reading."""
         participants = list(participants)
-        bar = tqdm(participants, desc="  extracting", unit="p", disable=not progress)
+        bar = tqdm(
+            participants,
+            desc="  extracting",
+            unit="p",
+            disable=not progress,
+            miniters=1,
+            mininterval=0,
+        )
         # via DataFrame so columns align by feature name, not by dict order
         return pd.DataFrame([self._cached(p) for p in bar], index=participants)
 
     def config(self) -> str:
-        """The full nested config, as sklearn renders it. Called through the
-        class because type checkers resolve `self.__repr__` against object's,
-        which takes no arguments; N_CHAR_MAX defeats the 700-char truncation
-        that would let two long configs collide."""
         return BaseEstimator.__repr__(self, N_CHAR_MAX=10**9)
 
     def _cached(self, participant: str) -> dict[str, float]:
