@@ -47,10 +47,23 @@ class Coder(BaseEstimator, ABC):
     @abstractmethod
     def score(self, units: list[str], prompt_granularity: str) -> np.ndarray: ...
 
-    def _walk(self, units, prompt, response_format, seed) -> list[dict]:
+    def _prompt_mode(self, units, prompt_granularity, standalone, system):
+        """(per-turn prompt, system message) for _walk, given this coder's
+        memory setting.
+
+        One unit carries no history, so the conversation form would only change
+        the wording. Falling back to the standalone prompt there keeps the
+        request byte-identical to the memory-free run"""
+        if self.memory and len(units) > 1:
+            return (
+                lambda u: f'{codebook.UNIT_LABEL[prompt_granularity]}:\n"""{u}"""'
+            ), system
+        return standalone, None
+
+    def _walk(self, units, prompt, response_format, seed, system=None) -> list[dict]:
         """Should be called by score(). One pass over the units.
-        With memory on, each answer stays in context for the next unit"""
-        history: list[dict] = []
+        With memory on, each answer stays in context for the next unit."""
+        history: list[dict] = [{"role": "system", "content": system}] if system else []
         replies = []
         for unit in units:
             messages = history + [{"role": "user", "content": prompt(unit)}]
@@ -61,6 +74,17 @@ class Coder(BaseEstimator, ABC):
                     {"role": "assistant", "content": json.dumps(reply)}
                 ]
         return replies
+
+
+def _binary_system(category: str, prompt_granularity: str) -> str:
+    examples = codebook.examples(category)
+    shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
+    label = codebook.UNIT_LABEL[prompt_granularity].lower()
+    return (
+        f"{codebook.prompt(category, prompt_granularity)}\n{shots}\n"
+        f"You will be sent one {label} at a time, in the order they were spoken. "
+        f"For each, answer whether the category applies."
+    )
 
 
 def _binary_prompt(unit: str, category: str, prompt_granularity: str) -> str:
@@ -89,12 +113,15 @@ class Binary(Coder):
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
             for j, category in enumerate(categories):
-                replies = self._walk(
+                prompt, system = self._prompt_mode(
                     units,
-                    lambda u, c=category: _binary_prompt(u, c, prompt_granularity),
-                    BINARY_FORMAT,
-                    seed,
+                    prompt_granularity,
+                    standalone=lambda u, c=category: _binary_prompt(
+                        u, c, prompt_granularity
+                    ),
+                    system=_binary_system(category, prompt_granularity),
                 )
+                replies = self._walk(units, prompt, BINARY_FORMAT, seed, system)
                 out[:, j] += [bool(r["applies"]) for r in replies]
         return out / self.n_seeds
 
@@ -106,6 +133,17 @@ def _catalogue(prompt_granularity: str) -> str:
         f"{c}: {codebook.prompt(c, prompt_granularity)}"
         + (f"\nExamples: {examples}" if (examples := codebook.examples(c)) else "")
         for c in codebook.categories(include_escape=True)
+    )
+
+
+def _topk_system(k: int, prompt_granularity: str) -> str:
+    label = codebook.UNIT_LABEL[prompt_granularity].lower()
+    return (
+        f"Below is a catalogue of verbal behavior categories.\n\n"
+        f"{_catalogue(prompt_granularity)}\n\n"
+        f"You will be sent one {label} at a time from a think-aloud experiment, "
+        f"in the order it was spoken. For each, name the {k} categories that "
+        f"apply most strongly."
     )
 
 
@@ -169,12 +207,13 @@ class TopK(Coder):
         index = {c: j for j, c in enumerate(categories)}
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
-            replies = self._walk(
+            prompt, system = self._prompt_mode(
                 units,
-                lambda u: _topk_prompt(u, self.k, prompt_granularity),
-                self._format(),
-                seed,
+                prompt_granularity,
+                standalone=lambda u: _topk_prompt(u, self.k, prompt_granularity),
+                system=_topk_system(self.k, prompt_granularity),
             )
+            replies = self._walk(units, prompt, self._format(), seed, system)
             for i, reply in enumerate(replies):
                 for picked in reply["categories"]:
                     if picked in index:  # the escape category falls through here

@@ -39,34 +39,27 @@ from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
 from extractors.taxonomy.segments import Groups, Transcript
 from pipeline import features
 
-# for scope in [Acquisition(), UntilDiscovery()]:
-#    for level in [Categories(), Clusters()]:
-#        features(TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level))
 
+for memory in [False, True]:
+    for scope in [Acquisition(), UntilDiscovery()]:
+        for segments in [Transcript(), Groups(size=6)]:
+            for level in [Categories(), Clusters()]:
+                features(
+                    TaxonomyExtractor(
+                        scope, segments, TopK(k=3, n_seeds=5, memory=memory), level
+                    )
+                )
 
-# for scope in [Acquisition(), UntilDiscovery()]:
-#    for level in [Categories(), Clusters()]:
-#        extractor = TaxonomyExtractor(scope, Transcript(), TopK(k=3, n_seeds=1), level)
-#        features(extractor)
-#        for classifier in CLASSIFIERS:
-#            evaluate(make_pipeline(extractor, classifier), n_permutations=1000)
-
-
-for scope in [Acquisition(), UntilDiscovery()]:
-    for segments in [Transcript(), Groups(size=6)]:
-        for level in [Categories(), Clusters()]:
-            features(TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5), level))
-
-
-# for scope in [Acquisition(), UntilDiscovery()]:
-#     for level in [Categories(), Clusters(across="max")]:
-#         # Transcript makes one unit, so it has nothing to pool
-#         segmenters = [Transcript()] + [
-#             Groups(size=6, pooling=p) for p in ["max", "mean"]
-#         ]
-#         for segments in segmenters:
-#             extractor = TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5), level)
-#             for classifier in CLASSIFIERS:
-#                 evaluate(make_pipeline(extractor, classifier), n_permutations=1000)
-
-# TODO: version that uses memory with a subset of the grid to check
+# for memory in [False, True]:
+#     for scope in [Acquisition(), UntilDiscovery()]:
+#         for level in [Categories(), Clusters(across="max")]:
+#             # Transcript makes one unit, so it has nothing to pool
+#             segmenters = [Transcript()] + [
+#                 Groups(size=6, pooling=p) for p in ["max", "mean"]
+#             ]
+#             for segments in segmenters:
+#                 extractor = TaxonomyExtractor(
+#                     scope, segments, TopK(k=3, n_seeds=5, memory=memory), level
+#                 )
+#                 for classifier in CLASSIFIERS:
+#                     evaluate(make_pipeline(extractor, classifier), n_permutations=1000)
