@@ -42,12 +42,13 @@ def features(extractor, limit: int | None = None) -> pd.DataFrame:
 
 
 def _name(model) -> str:
+    """Extractors spell out their whole config: in a sweep every line otherwise
+    reads TaxonomyExtractor and there is no telling the runs apart."""
     steps = getattr(model, "steps", None)
-    return (
-        type(model).__name__
-        if steps is None
-        else " + ".join(_name(step) for _, step in steps)
-    )
+    if steps is not None:
+        return " + ".join(_name(step) for _, step in steps)
+    config = getattr(model, "config", None)
+    return " ".join(config().split()) if callable(config) else type(model).__name__  # type: ignore
 
 
 def _loo_scores(model, X, y) -> np.ndarray:

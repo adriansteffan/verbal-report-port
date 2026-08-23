@@ -194,6 +194,7 @@ class TopK(Coder):
                             },
                             "minItems": self.k,
                             "maxItems": self.k,
+                            # TODO: "uniqueItems": True. Without it the model can name the same category twice. Invalidates or cache though
                         },
                     },
                     "required": ["reasoning", "categories"],
@@ -215,7 +216,9 @@ class TopK(Coder):
             )
             replies = self._walk(units, prompt, self._format(), seed, system)
             for i, reply in enumerate(replies):
-                for picked in reply["categories"]:
+                # set(): a category named twice is one occurrence, not two. See
+                # the uniqueItems note in _format
+                for picked in set(reply["categories"]):
                     if picked in index:  # the escape category falls through here
                         out[i, index[picked]] += 1
         return out / self.n_seeds

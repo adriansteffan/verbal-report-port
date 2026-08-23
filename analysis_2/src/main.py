@@ -18,7 +18,10 @@ CLASSIFIERS = [
     make_pipeline(StandardScaler(), LogisticRegression(class_weight="balanced")),
     make_pipeline(StandardScaler(), SVC(kernel="linear", class_weight="balanced")),
     LinearDiscriminantAnalysis(solver="lsqr", shrinkage="auto"),
-    GaussianNB(),
+    # GaussianNB assumes the features are conditionally independent, but top-k
+    # forces exactly k categories per unit, so they are compositional and
+    # negatively coupled by construction
+    # GaussianNB(),
     # RandomForestClassifier(
     #   n_estimators=100,
     #   max_depth=3,
@@ -36,30 +39,46 @@ from extractors.taxonomy.coders import TopK
 from extractors.taxonomy.extractor import TaxonomyExtractor
 from extractors.taxonomy.levels import Categories, Clusters
 from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
-from extractors.taxonomy.segments import Groups, Transcript
+from extractors.taxonomy.segments import Groups, Transcript, Utterances
 from pipeline import features
 
 
-for memory in [False, True]:
-    for scope in [Acquisition(), UntilDiscovery()]:
-        for segments in [Transcript(), Groups(size=6)]:
-            for level in [Categories(), Clusters()]:
-                features(
-                    TaxonomyExtractor(
-                        scope, segments, TopK(k=3, n_seeds=5, memory=memory), level
-                    )
-                )
-
 # for memory in [False, True]:
 #     for scope in [Acquisition(), UntilDiscovery()]:
-#         for level in [Categories(), Clusters(across="max")]:
-#             # Transcript makes one unit, so it has nothing to pool
-#             segmenters = [Transcript()] + [
-#                 Groups(size=6, pooling=p) for p in ["max", "mean"]
-#             ]
-#             for segments in segmenters:
-#                 extractor = TaxonomyExtractor(
-#                     scope, segments, TopK(k=3, n_seeds=5, memory=memory), level
+#         for segments in [Transcript(), Groups(size=6)]:
+#             for level in [Categories(), Clusters()]:
+#                 features(
+#                     TaxonomyExtractor(
+#                         scope, segments, TopK(k=3, n_seeds=5, memory=memory), level
+#                     )
 #                 )
-#                 for classifier in CLASSIFIERS:
-#                     evaluate(make_pipeline(extractor, classifier), n_permutations=1000)
+
+
+# for level in [Categories(), Clusters()]:
+#     features(
+#         TaxonomyExtractor(Acquisition(), Utterances(), TopK(k=3, n_seeds=1), level)
+#     )
+
+
+SWEEP = [
+    TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5, memory=memory), level)
+    for scope in [Acquisition(), UntilDiscovery()]
+    for level in [Categories(), Clusters(across="max")]
+    for segments, memory in [(Transcript(), False)]
+    + [
+        (Groups(size=6, pooling=pooling), memory)
+        for pooling in ["max", "mean"]
+        for memory in [False, True]
+    ]
+] + [
+    TaxonomyExtractor(
+        Acquisition(), Utterances(pooling=pooling), TopK(k=3, n_seeds=1), level
+    )
+    for level in [Categories(), Clusters(across="max")]
+    for pooling in ["max", "mean"]
+]
+
+for extractor in SWEEP:
+    features(extractor)
+    for classifier in CLASSIFIERS:
+        evaluate(make_pipeline(extractor, classifier), n_permutations=500)
