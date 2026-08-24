@@ -21,16 +21,16 @@ client = OpenAI(
 DEFAULT_MODEL = "qwen3.6:27b"
 
 OUTPUT.mkdir(exist_ok=True)
-_db = sqlite3.connect(OUTPUT / "llm_cache.sqlite")
+db = sqlite3.connect(OUTPUT / "llm_cache.sqlite")
 # the request is stored next to the reply so a run can be read back afterwards
-_db.execute(
+db.execute(
     "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, model TEXT,"
     " seed INTEGER, messages TEXT, response TEXT)"
 )
 
 
 # which (config, participant) used which call, for potential reconstruction
-_db.execute(
+db.execute(
     "CREATE TABLE IF NOT EXISTS calls (key TEXT, config TEXT, participant TEXT,"
     " PRIMARY KEY (key, config, participant))"
 )
@@ -63,12 +63,12 @@ def judge(
 
     config, participant = _provenance.get()
     if config or participant:
-        _db.execute(
+        db.execute(
             "INSERT OR IGNORE INTO calls VALUES (?, ?, ?)", (key, config, participant)
         )
-        _db.commit()  # bookkeeping
+        db.commit()  # bookkeeping
 
-    hit = _db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone()
+    hit = db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone()
 
     if hit:
         content = hit[0]
@@ -92,9 +92,9 @@ def judge(
         ) from e
 
     if not hit:
-        _db.execute(
+        db.execute(
             "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?, ?)",
             (key, model, seed, json.dumps(messages), content),
         )
-        _db.commit()
+        db.commit()
     return parsed

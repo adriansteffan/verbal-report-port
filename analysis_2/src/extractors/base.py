@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
+from sklearn import config_context
 from sklearn.base import BaseEstimator, TransformerMixin
 from tqdm import tqdm
 
@@ -22,7 +23,8 @@ class FeatureExtractor(BaseEstimator, TransformerMixin, ABC):
         return self.frame(np.ravel(X)).to_numpy(dtype=float)
 
     def config(self) -> str:
-        return BaseEstimator.__repr__(self, N_CHAR_MAX=10**9)
+        with config_context(print_changed_only=False):
+            return " ".join(BaseEstimator.__repr__(self, N_CHAR_MAX=10**9).split())
 
     def frame(self, participants, progress: bool = False) -> pd.DataFrame:
         """Named feature matrix, participants x features. transform() drops the

@@ -3,6 +3,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from sklearn import config_context
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 
@@ -20,10 +21,19 @@ def cohort(limit: int | None = None) -> tuple[list[str], pd.Series]:
     ], labels
 
 
+def slug(config: str) -> str:
+    """Readable one-line form of a config."""
+    config = re.sub(r"\b\w+=(?=\w+\()", "", config)
+    return re.sub(r"[^0-9A-Za-z]+", "-", config).strip("-")[:200]
+
+
+def _filename(config: str) -> str:
+    return f"{slug(config)}-{hashlib.sha256(config.encode()).hexdigest()[:8]}.csv"
+
+
 def features(extractor, limit: int | None = None) -> pd.DataFrame:
     """Write one participants x features CSV per config, for reading without
-    rerunning anything. The config is in the filename, hashed so two long
-    configs cannot land on the same file."""
+    rerunning anything."""
     pids, labels = cohort(limit)
     if PROGRESS:
         print(" ".join(extractor.config().split()))
@@ -32,9 +42,7 @@ def features(extractor, limit: int | None = None) -> pd.DataFrame:
     df.index.name = "participant"
 
     config = extractor.config()
-    slug = re.sub(r"[^0-9A-Za-z]+", "-", config).strip("-")[:80]
-    digest = hashlib.sha256(config.encode()).hexdigest()[:8]
-    path = OUTPUT / "features" / f"{slug}-{digest}.csv"
+    path = OUTPUT / "features" / _filename(config)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path)
     print(f"{len(df)} participants x {df.shape[1] - 1} features -> {path.name}")
@@ -58,6 +66,41 @@ def _loo_scores(model, X, y) -> np.ndarray:
     scores = cross_val_predict(model, X, y, cv=LeaveOneOut(), method=method)
     # predict_proba columns follow np.unique(y), so find class 1, decision_function is already 1-D
     return scores[:, list(np.unique(y)).index(1)] if scores.ndim > 1 else scores
+
+
+def unit_features(extractor, limit: int | None = None) -> pd.DataFrame:
+    """Per-unit scores for a chunked segmenter, in the same shape as features()
+    but keyed by (participant, unit)
+
+    Written to a subfolder, not used in our models, just for external analyses"""
+    pids, labels = cohort(limit)
+    rows = [
+        {
+            "participant": pid,
+            "unit": unit,
+            "aware": labels[pid],
+            **scores,
+            "text": " ".join(text.split()),
+        }
+        for pid in pids
+        for (unit, scores), text in zip(
+            extractor.unit_scores(pid).iterrows(),
+            extractor.segments.split(extractor.scope.select(pid)),
+        )
+    ]
+    df = pd.DataFrame(rows)
+
+    with config_context(print_changed_only=False):  # spell out every parameter
+        config = " ".join(
+            repr(o) for o in (extractor.coder, extractor.scope, extractor.segments)
+        )
+    config = re.sub(r"pooling='\w+', ?", "", config)
+
+    path = OUTPUT / "features" / "per-unit" / _filename(config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
+    print(f"{len(df)} units x {len(df.columns) - 4} categories -> per-unit/{path.name}")
+    return df
 
 
 def evaluate(model, limit: int | None = None, n_permutations: int = 0, seed: int = 0):

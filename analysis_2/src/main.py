@@ -1,8 +1,6 @@
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.dummy import DummyClassifier
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.naive_bayes import GaussianNB
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
@@ -42,7 +40,6 @@ from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
 from extractors.taxonomy.segments import Groups, Transcript, Utterances
 from pipeline import features
 
-
 # for memory in [False, True]:
 #     for scope in [Acquisition(), UntilDiscovery()]:
 #         for segments in [Transcript(), Groups(size=6)]:
@@ -54,10 +51,10 @@ from pipeline import features
 #                 )
 
 
-# for level in [Categories(), Clusters()]:
-#     features(
-#         TaxonomyExtractor(Acquisition(), Utterances(), TopK(k=3, n_seeds=1), level)
-#     )
+for level in [Categories(), Clusters()]:
+    features(
+        TaxonomyExtractor(Acquisition(), Utterances(), TopK(k=1, n_seeds=3), level)
+    )
 
 
 SWEEP = [
@@ -72,7 +69,7 @@ SWEEP = [
     ]
 ] + [
     TaxonomyExtractor(
-        Acquisition(), Utterances(pooling=pooling), TopK(k=3, n_seeds=1), level
+        Acquisition(), Utterances(pooling=pooling), TopK(k=1, n_seeds=3), level
     )
     for level in [Categories(), Clusters(across="max")]
     for pooling in ["max", "mean"]
