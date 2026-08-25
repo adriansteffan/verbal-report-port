@@ -24,6 +24,21 @@ KS = [1, 3]
 
 pids, labels = cohort()
 
+UNIT_MARKERS = tuple(f'{label}:\n"""' for label in codebook.UNIT_LABEL.values())
+
+
+def _tail(prompt: str) -> str:
+    """
+    Ugly hack to work shuffling into the current caching structure, ugh.
+    Everything from Passage:/Utterance:/Transcript: onwards,
+    dropping the catalogue that comes before it.
+
+    Calls are looked up by their prompt text, and the catalogue is the part of
+    that text a shuffling coder reorders on every seed. Cutting it off leaves a
+    key that is the same whatever order the categories were listed in."""
+    starts = [prompt.index(m) for m in UNIT_MARKERS if m in prompt]
+    return prompt[min(starts) :] if starts else prompt
+
 
 def _passages() -> dict[tuple[str, str], tuple[str, int, str]]:
     """(participant, prompt) -> (granularity, passage number, text).
@@ -39,9 +54,13 @@ def _passages() -> dict[tuple[str, str], tuple[str, int, str]]:
             for pid in pids:
                 for i, unit in enumerate(segments.split(scope.select(pid)), start=1):
                     forms = [f'{codebook.UNIT_LABEL[granularity]}:\n"""{unit}"""']
-                    forms += [coders._topk_prompt(unit, k, granularity) for k in KS]  # type: ignore
+                    # built with an empty catalogue, since _tail cuts it off anyway
+                    forms += [
+                        coders._topk_prompt(unit, k, granularity, "")  # type: ignore
+                        for k in KS
+                    ]
                     for form in forms:
-                        out[(pid, form)] = (granularity, i, unit)
+                        out[(pid, _tail(form))] = (granularity, i, unit)
     return out
 
 
@@ -63,7 +82,7 @@ for key, seed, messages, response in llm.db.execute(
     "SELECT key, seed, messages, response FROM cache"
 ):
     pid, configs = asked.get(key, ("", set()))
-    found = sent.get((pid, json.loads(messages)[-1]["content"]))
+    found = sent.get((pid, _tail(json.loads(messages)[-1]["content"])))
     if found is None:
         skipped += 1
         continue
@@ -77,6 +96,7 @@ for key, seed, messages, response in llm.db.execute(
             "granularity": granularity,
             "k": _param(configs, "k"),
             "memory": _param(configs, "memory"),
+            "shuffle": _param(configs, "shuffle"),
             "model": _param(configs, "model"),
             "seed": seed,
             "passage": index,
@@ -93,6 +113,6 @@ for key, seed, messages, response in llm.db.execute(
 out = OUTPUT / "review"
 out.mkdir(parents=True, exist_ok=True)
 judgements = pd.DataFrame(rows).sort_values(
-    ["scope", "granularity", "k", "memory", "participant", "passage", "seed"]
+    ["scope", "granularity", "k", "memory", "shuffle", "participant", "passage", "seed"]
 )
 judgements.to_csv(out / "judgements.csv", index=False)

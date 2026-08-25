@@ -4,8 +4,8 @@ Coders return a (units x categories) matrix of scores in
 [0, 1]. With one seed those are 0/1; with several, the fraction of seeds that
 said yes."""
 
-import functools
 import json
+import random
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -13,6 +13,12 @@ from sklearn.base import BaseEstimator
 
 from extractors.taxonomy import codebook
 from utils import llm
+
+# How the categories and their examples are shuffled before the model reads
+# them. clustered shuffles within cluster and the cluster order, but leaves options within a cluster next to each other
+# full shuffles the categories randomly
+# examples for a given category are always shuffled
+SHUFFLES = ("none", "clustered", "full")
 
 BINARY_FORMAT = {
     "type": "json_schema",
@@ -38,14 +44,45 @@ BINARY_FORMAT = {
 
 class Coder(BaseEstimator, ABC):
     def __init__(
-        self, n_seeds: int = 5, memory: bool = False, model: str = llm.DEFAULT_MODEL
+        self,
+        n_seeds: int = 5,
+        memory: bool = False,
+        shuffle: str = "none",
+        model: str = llm.DEFAULT_MODEL,
     ):
         self.n_seeds = n_seeds
         self.memory = memory
+        self.shuffle = shuffle
         self.model = model
 
     @abstractmethod
     def score(self, units: list[str], prompt_granularity: str) -> np.ndarray: ...
+
+    def _rng(self, seed: int) -> random.Random | None:
+        """The randomness `_options` and `codebook.examples` draw their order
+        from, or None to leave the codebook in file order."""
+        if self.shuffle not in SHUFFLES:
+            raise ValueError(f"shuffle must be one of {SHUFFLES}, got {self.shuffle!r}")
+        return random.Random(seed) if self.shuffle != "none" else None
+
+    def _options(self, rng: random.Random | None) -> list[str]:
+        """The categories in the order they are offered to the model.
+
+        "clustered" shuffles within each cluster and shuffles the clusters
+        themselves, so related categories stay adjacent: the grouping tells the
+        model that e.g. letter and position hypotheses are the same behavior
+        applied to different features."""
+        options = codebook.categories(include_escape=True)
+        if rng is None:
+            return options
+        if self.shuffle == "full":
+            return rng.sample(options, len(options))
+        # shuffle categories within clusters
+        clusters = [rng.sample(cs, len(cs)) for cs in codebook.clusters().values()]
+        # shuffle clusters
+        return [
+            c for cluster in rng.sample(clusters, len(clusters)) for c in cluster
+        ] + [codebook.ESCAPE]
 
     def _prompt_mode(self, units, prompt_granularity, standalone, system):
         """(per-turn prompt, system message) for _walk, given this coder's
@@ -53,7 +90,10 @@ class Coder(BaseEstimator, ABC):
 
         One unit carries no history, so the conversation form would only change
         the wording. Falling back to the standalone prompt there keeps the
-        request byte-identical to the memory-free run"""
+        request byte-identical to the memory-free run.
+
+        CACHE-BOUND: otherwise memory=True would just use the conversation form
+        throughout, at the cost of paying twice for single-unit scopes."""
         if self.memory and len(units) > 1:
             return (
                 lambda u: f'{codebook.UNIT_LABEL[prompt_granularity]}:\n"""{u}"""'
@@ -76,8 +116,7 @@ class Coder(BaseEstimator, ABC):
         return replies
 
 
-def _binary_system(category: str, prompt_granularity: str) -> str:
-    examples = codebook.examples(category)
+def _binary_system(category: str, prompt_granularity: str, examples: str) -> str:
     shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
     label = codebook.UNIT_LABEL[prompt_granularity].lower()
     return (
@@ -87,8 +126,9 @@ def _binary_system(category: str, prompt_granularity: str) -> str:
     )
 
 
-def _binary_prompt(unit: str, category: str, prompt_granularity: str) -> str:
-    examples = codebook.examples(category)
+def _binary_prompt(
+    unit: str, category: str, prompt_granularity: str, examples: str
+) -> str:
     shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
     return (
         f"{codebook.prompt(category, prompt_granularity)}\n{shots}\n"
@@ -112,43 +152,46 @@ class Binary(Coder):
         categories = codebook.categories()
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
+            rng = self._rng(seed)
             for j, category in enumerate(categories):
+                examples = codebook.examples(category, rng)
                 prompt, system = self._prompt_mode(
                     units,
                     prompt_granularity,
-                    standalone=lambda u, c=category: _binary_prompt(
-                        u, c, prompt_granularity
+                    standalone=lambda u, c=category, e=examples: _binary_prompt(
+                        u, c, prompt_granularity, e
                     ),
-                    system=_binary_system(category, prompt_granularity),
+                    system=_binary_system(category, prompt_granularity, examples),
                 )
                 replies = self._walk(units, prompt, BINARY_FORMAT, seed, system)
                 out[:, j] += [bool(r["applies"]) for r in replies]
         return out / self.n_seeds
 
 
-@functools.cache
-def _catalogue(prompt_granularity: str) -> str:
-    """The full category list"""
+def _catalogue(
+    prompt_granularity: str, options: list[str], rng: random.Random | None
+) -> str:
+    """The category list spelled out, in the order given. The rng reorders the
+    examples inside a category; the category order is already decided."""
     return "\n\n".join(
         f"{c}: {codebook.prompt(c, prompt_granularity)}"
-        + (f"\nExamples: {examples}" if (examples := codebook.examples(c)) else "")
-        for c in codebook.categories(include_escape=True)
+        + (f"\nExamples: {examples}" if (examples := codebook.examples(c, rng)) else "")
+        for c in options
     )
 
 
-def _topk_system(k: int, prompt_granularity: str) -> str:
+def _topk_system(k: int, prompt_granularity: str, catalogue: str) -> str:
     label = codebook.UNIT_LABEL[prompt_granularity].lower()
     return (
         f"Below is a catalogue of verbal behavior categories.\n\n"
-        f"{_catalogue(prompt_granularity)}\n\n"
+        f"{catalogue}\n\n"
         f"You will be sent one {label} at a time from a think-aloud experiment, "
         f"in the order it was spoken. For each, name the {k} categories that "
         f"apply most strongly."
     )
 
 
-def _topk_prompt(unit: str, k: int, prompt_granularity: str) -> str:
-    catalogue = _catalogue(prompt_granularity)
+def _topk_prompt(unit: str, k: int, prompt_granularity: str, catalogue: str) -> str:
     return (
         f"Below is a catalogue of verbal behavior categories, then one "
         f"{codebook.UNIT_LABEL[prompt_granularity].lower()} from a think-aloud experiment.\n\n"
@@ -166,12 +209,13 @@ class TopK(Coder):
         k: int = 3,
         n_seeds: int = 5,
         memory: bool = False,
+        shuffle: str = "none",
         model: str = llm.DEFAULT_MODEL,
     ):
-        super().__init__(n_seeds=n_seeds, memory=memory, model=model)
+        super().__init__(n_seeds=n_seeds, memory=memory, shuffle=shuffle, model=model)
         self.k = k
 
-    def _format(self) -> dict:
+    def _format(self, options: list[str]) -> dict:
         # the escape category is offered here, then dropped from the features
         return {
             "type": "json_schema",
@@ -190,11 +234,13 @@ class TopK(Coder):
                             "type": "array",
                             "items": {
                                 "type": "string",
-                                "enum": codebook.categories(include_escape=True),
+                                "enum": options,
                             },
                             "minItems": self.k,
                             "maxItems": self.k,
-                            # TODO: "uniqueItems": True. Without it the model can name the same category twice. Invalidates or cache though
+                            # CACHE-BOUND: "uniqueItems": True belongs here -
+                            # without it the model can name one category twice -
+                            # but adding it rewrites every top-k request
                         },
                     },
                     "required": ["reasoning", "categories"],
@@ -208,16 +254,21 @@ class TopK(Coder):
         index = {c: j for j, c in enumerate(categories)}
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
+            rng = self._rng(seed)
+            options = self._options(rng)
+            catalogue = _catalogue(prompt_granularity, options, rng)
             prompt, system = self._prompt_mode(
                 units,
                 prompt_granularity,
-                standalone=lambda u: _topk_prompt(u, self.k, prompt_granularity),
-                system=_topk_system(self.k, prompt_granularity),
+                standalone=lambda u, c=catalogue: _topk_prompt(
+                    u, self.k, prompt_granularity, c
+                ),
+                system=_topk_system(self.k, prompt_granularity, catalogue),
             )
-            replies = self._walk(units, prompt, self._format(), seed, system)
+            replies = self._walk(units, prompt, self._format(options), seed, system)
             for i, reply in enumerate(replies):
-                # set(): a category named twice is one occurrence, not two. See
-                # the uniqueItems note in _format
+                # set(): a category named twice is one occurrence, not two.
+                # CACHE-BOUND: goes away with the uniqueItems note in _format
                 for picked in set(reply["categories"]):
                     if picked in index:  # the escape category falls through here
                         out[i, index[picked]] += 1

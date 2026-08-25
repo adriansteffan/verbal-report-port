@@ -1,6 +1,8 @@
 """The cluster/category scheme from vr_prompts-examples.xlsx."""
 
 import functools
+import random
+import re
 
 import pandas as pd
 
@@ -56,6 +58,12 @@ def prompt(category: str, prompt_granularity: str) -> str:
     return _column(PROMPT_COLUMN[prompt_granularity])[category]
 
 
-def examples(category: str) -> str:
-    """Few-shot examples for one category, empty for the residual class."""
-    return _column("Most diagnostic examples")[category]
+def examples(category: str, rng: random.Random | None = None) -> str:
+    """Few-shot examples for one category, potentially shuffled, empty for the residual class."""
+    shots = _column("Most diagnostic examples")[category]
+    if rng is None:
+        return shots
+    snippet = r'"[^"]*"'
+    found = re.findall(snippet, shots)
+    picked = iter(rng.sample(found, len(found)))
+    return re.sub(snippet, lambda _: next(picked), shots)
