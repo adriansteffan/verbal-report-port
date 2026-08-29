@@ -1,4 +1,4 @@
-"""The cluster/category scheme from vr_prompts-examples.xlsx."""
+"""The cluster/category scheme from vr_prompts-v2_1.xlsx."""
 
 import functools
 import random
@@ -13,13 +13,7 @@ from utils.paths import TAXONOMY
 # the near-constant complement of everything else.
 ESCAPE = "Not otherwise specified"
 
-PROMPT_COLUMN = {
-    "utterance": "PROMPT",
-    "group": "PROMPT_group",
-    "transcript": "PROMPT_transcript",
-}
-
-# what the prompt calls the unit, matching the wording of the variant above
+# what the prompt calls the unit
 UNIT_LABEL = {"utterance": "Utterance", "group": "Passage", "transcript": "Transcript"}
 
 
@@ -54,13 +48,13 @@ def _column(name: str) -> dict[str, str]:
     }
 
 
-def prompt(category: str, prompt_granularity: str) -> str:
-    return _column(PROMPT_COLUMN[prompt_granularity])[category]
+def prompt(category: str) -> str:
+    return _column("PROMPT")[category]
 
 
 def examples(category: str, rng: random.Random | None = None) -> str:
     """Few-shot examples for one category, potentially shuffled, empty for the residual class."""
-    shots = _column("Most diagnostic examples")[category]
+    shots = _column("Examples")[category]
     if rng is None:
         return shots
     snippet = r'"[^"]*"'

@@ -42,6 +42,36 @@ BINARY_FORMAT = {
 }
 
 
+# said 48 here because the model does not know about the 49th round
+TASK_DESCRIPTION = """You will be assigning categories to verbal reports made by participants in the following experiment:
+
+Participants completed 48 rounds of a 36-armed bandit task with the
+goal of identifying a single winning bandit within six attempts in each round. That is, 35 of
+the bandits, if selected, would return "incorrect" feedback, while just one bandit would
+trigger a "correct" message and would terminate the round. Bandits were organised into six
+sections numbered 1 to 6, each containing six options labelled with one of the letters from
+A to F (in a random order).
+The winning bandit in each round followed one of two deterministic six-round sequences
+that repeated cyclically. Under the Section-only rule, the section containing the winner
+followed a fixed sequence across rounds (1-2-3-4-5-6), while the winning letter within the
+section was unpredictable. Under the Section+letter rule, both section and letter followed
+a fixed sequence (1-A, 2-B, 3-C, 4-D, 5-E, 6-F). Learning the Section-only rule was sufficient
+to succeed in the task, in the sense that the participant would always be able to find the
+winning option if they clicked exhaustively on each bandit within the right section (because
+there were six options within a section and they had six attempts). For the Section+letter
+rule, participants were reliably able to identify the winning bandit on the first trial of each
+round. Letter positions were shuffled between rounds, and so the letter pattern was not
+confounded with the physical location of the winning bandit.
+The task transitioned from the Section-only rule to the Section+letter rule halfway through.
+That is, the section that contained the winning option was always predictable, while the
+exact letter was only predictable in the second half, starting from round 25.
+Before each round, participants predicted the section containing the winning bandit and
+rated their confidence. After predicting the section winner, participants then selected
+bandits until they found the winner (i.e., round win) or until six unsuccessful trials elapsed
+(i.e., round loss).
+""".strip()
+
+
 class Coder(BaseEstimator, ABC):
     def __init__(
         self,
@@ -108,7 +138,8 @@ def _binary_system(category: str, prompt_granularity: str, examples: str) -> str
     shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
     label = codebook.UNIT_LABEL[prompt_granularity].lower()
     return (
-        f"{codebook.prompt(category, prompt_granularity)}\n{shots}\n"
+        f"{TASK_DESCRIPTION}\n\n"
+        f"{codebook.prompt(category)}\n{shots}\n"
         f"You will be sent one {label} at a time, in the order they were spoken. "
         f"For each, answer whether the category applies."
     )
@@ -140,13 +171,11 @@ class Binary(Coder):
         return out / self.n_seeds
 
 
-def _catalogue(
-    prompt_granularity: str, options: list[str], rng: random.Random | None
-) -> str:
+def _catalogue(options: list[str], rng: random.Random | None) -> str:
     """The category list spelled out, in the order given. The rng reorders the
     examples inside a category; the category order is already decided."""
     return "\n\n".join(
-        f"{c}: {codebook.prompt(c, prompt_granularity)}"
+        f"{c}: {codebook.prompt(c)}"
         + (f"\nExamples: {examples}" if (examples := codebook.examples(c, rng)) else "")
         for c in options
     )
@@ -155,9 +184,10 @@ def _catalogue(
 def _topk_system(k: int, prompt_granularity: str, catalogue: str) -> str:
     label = codebook.UNIT_LABEL[prompt_granularity].lower()
     return (
+        f"{TASK_DESCRIPTION}\n\n"
         f"Below is a catalogue of verbal behavior categories.\n\n"
         f"{catalogue}\n\n"
-        f"You will be sent one {label} at a time from a think-aloud experiment, "
+        f"You will be sent one {label} at a time from the think-aloud experiment described above, "
         f"in the order it was spoken. For each, name the {k} categories that "
         f"apply most strongly."
     )
@@ -218,7 +248,7 @@ class TopK(Coder):
         for seed in range(self.n_seeds):
             rng = self._rng(seed)
             options = self._options(rng)
-            catalogue = _catalogue(prompt_granularity, options, rng)
+            catalogue = _catalogue(options, rng)
             system = _topk_system(self.k, prompt_granularity, catalogue)
             replies = self._walk(
                 units, prompt_granularity, self._format(options), seed, system
