@@ -54,12 +54,19 @@ from pipeline import export_calls, features
 
 for level in [Categories(), Clusters()]:
     features(
-        TaxonomyExtractor(Acquisition(), Utterances(), TopK(k=1, n_seeds=3), level)
+        TaxonomyExtractor(
+            Acquisition(),
+            Utterances(),
+            TopK(k=1, n_seeds=3, shuffle="clustered"),
+            level,
+        )
     )
 
 
 SWEEP = [
-    TaxonomyExtractor(scope, segments, TopK(k=3, n_seeds=5, memory=memory), level)
+    TaxonomyExtractor(
+        scope, segments, TopK(k=3, n_seeds=5, memory=memory, shuffle="clustered"), level
+    )
     for scope in [Acquisition(), UntilDiscovery()]
     for level in [Categories(), Clusters(across="max")]
     for segments, memory in [(Transcript(), False)]
@@ -70,7 +77,10 @@ SWEEP = [
     ]
 ] + [
     TaxonomyExtractor(
-        Acquisition(), Utterances(pooling=pooling), TopK(k=1, n_seeds=3), level
+        Acquisition(),
+        Utterances(pooling=pooling),
+        TopK(k=1, n_seeds=3, shuffle="clustered"),
+        level,
     )
     for level in [Categories(), Clusters(across="max")]
     for pooling in ["max", "mean"]

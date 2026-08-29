@@ -86,14 +86,19 @@ class Coder(BaseEstimator, ABC):
         self.model = model
 
     @abstractmethod
-    def score(self, units: list[str], prompt_granularity: str) -> np.ndarray: ...
+    def score(
+        self, units: list[str], prompt_granularity: str, participant: str
+    ) -> np.ndarray: ...
 
-    def _rng(self, seed: int) -> random.Random | None:
+    def _rng(self, seed: int, participant: str) -> random.Random | None:
         """The randomness `_options` and `codebook.examples` draw their order
         from, or None to leave the codebook in file order."""
         if self.shuffle not in SHUFFLES:
             raise ValueError(f"shuffle must be one of {SHUFFLES}, got {self.shuffle!r}")
-        return random.Random(seed) if self.shuffle != "none" else None
+        if self.shuffle == "none":
+            return None
+        # seeding on participant as well as seed prevent systematic positional biases form seed only
+        return random.Random(f"{participant}:{seed}")
 
     def _options(self, rng: random.Random | None) -> list[str]:
         """The categories in the order they are offered to the model.
@@ -173,11 +178,13 @@ class Binary(Coder):
     instead of len(units) * len(categories), but loses cross-category
     consistency. (might want to change later, but this is too expensive anyways)"""
 
-    def score(self, units: list[str], prompt_granularity: str) -> np.ndarray:
+    def score(
+        self, units: list[str], prompt_granularity: str, participant: str
+    ) -> np.ndarray:
         categories = codebook.categories()
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
-            rng = self._rng(seed)
+            rng = self._rng(seed, participant)
             for j, category in enumerate(categories):
                 examples = codebook.examples(category, rng)
                 system = _binary_system(
@@ -257,12 +264,14 @@ class TopK(Coder):
             },
         }
 
-    def score(self, units: list[str], prompt_granularity: str) -> np.ndarray:
+    def score(
+        self, units: list[str], prompt_granularity: str, participant: str
+    ) -> np.ndarray:
         categories = codebook.categories()
         index = {c: j for j, c in enumerate(categories)}
         out = np.zeros((len(units), len(categories)))
         for seed in range(self.n_seeds):
-            rng = self._rng(seed)
+            rng = self._rng(seed, participant)
             options = self._options(rng)
             catalogue = _catalogue(options, rng)
             system = _topk_system(self.k, prompt_granularity, catalogue, self.memory)

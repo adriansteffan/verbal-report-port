@@ -37,7 +37,9 @@ class TaxonomyExtractor(FeatureExtractor):
         spoken = [i for i, unit in enumerate(units) if unit]
         if spoken:
             scores[spoken] = self.coder.score(
-                [units[i] for i in spoken], self.segments.prompt_granularity
+                [units[i] for i in spoken],
+                self.segments.prompt_granularity,
+                participant,
             )
         return pd.DataFrame(
             scores,
