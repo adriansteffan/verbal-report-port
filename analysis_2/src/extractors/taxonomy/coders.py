@@ -134,14 +134,31 @@ class Coder(BaseEstimator, ABC):
         return replies
 
 
-def _binary_system(category: str, prompt_granularity: str, examples: str) -> str:
-    shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
+def _framing(prompt_granularity: str, memory: bool) -> str:
+    """How the unit arrives and how to read it."""
     label = codebook.UNIT_LABEL[prompt_granularity].lower()
+    arrival = (
+        f"You will be sent one {label} at a time from the think-aloud "
+        f"experiment described above, in the order it was spoken."
+        if memory
+        else f"You will be sent one {label} from the think-aloud experiment "
+        f"described above."
+    )
+    return (
+        f"{arrival} Speech is labelled with the round it was spoken in, and "
+        f"rounds the participant said nothing in are left out."
+    )
+
+
+def _binary_system(
+    category: str, prompt_granularity: str, examples: str, memory: bool
+) -> str:
+    shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
     return (
         f"{TASK_DESCRIPTION}\n\n"
         f"{codebook.prompt(category)}\n{shots}\n"
-        f"You will be sent one {label} at a time, in the order they were spoken. "
-        f"For each, answer whether the category applies."
+        f"{_framing(prompt_granularity, memory)} "
+        f"Answer whether the category applies."
     )
 
 
@@ -163,7 +180,9 @@ class Binary(Coder):
             rng = self._rng(seed)
             for j, category in enumerate(categories):
                 examples = codebook.examples(category, rng)
-                system = _binary_system(category, prompt_granularity, examples)
+                system = _binary_system(
+                    category, prompt_granularity, examples, self.memory
+                )
                 replies = self._walk(
                     units, prompt_granularity, BINARY_FORMAT, seed, system
                 )
@@ -181,20 +200,20 @@ def _catalogue(options: list[str], rng: random.Random | None) -> str:
     )
 
 
-def _topk_system(k: int, prompt_granularity: str, catalogue: str) -> str:
-    label = codebook.UNIT_LABEL[prompt_granularity].lower()
+def _topk_system(k: int, prompt_granularity: str, catalogue: str, memory: bool) -> str:
     return (
         f"{TASK_DESCRIPTION}\n\n"
         f"Below is a catalogue of verbal behavior categories.\n\n"
         f"{catalogue}\n\n"
-        f"You will be sent one {label} at a time from the think-aloud experiment described above, "
-        f"in the order it was spoken. For each, name the {k} categories that "
-        f"apply most strongly."
+        f"{_framing(prompt_granularity, memory)} "
+        f"List the categories that apply, most strongly first, at most {k} of "
+        f"them. List fewer if fewer apply, and never name a category twice. "
+        f"If none apply, list only {codebook.ESCAPE}."
     )
 
 
 class TopK(Coder):
-    """One call per unit: name the k categories that fit best."""
+    """One call per unit: the categories that apply, ranked, at most k of them."""
 
     def __init__(
         self,
@@ -220,7 +239,7 @@ class TopK(Coder):
                         "reasoning": {
                             "type": "string",
                             "description": "One or two sentences on which "
-                            "categories were considered and why these fit best.",
+                            "categories were considered and why they rank this way.",
                         },
                         "categories": {
                             "type": "array",
@@ -228,11 +247,8 @@ class TopK(Coder):
                                 "type": "string",
                                 "enum": options,
                             },
-                            "minItems": self.k,
+                            "minItems": 1,
                             "maxItems": self.k,
-                            # CACHE-BOUND: "uniqueItems": True belongs here -
-                            # without it the model can name one category twice -
-                            # but adding it rewrites every top-k request
                         },
                     },
                     "required": ["reasoning", "categories"],
@@ -249,14 +265,12 @@ class TopK(Coder):
             rng = self._rng(seed)
             options = self._options(rng)
             catalogue = _catalogue(options, rng)
-            system = _topk_system(self.k, prompt_granularity, catalogue)
+            system = _topk_system(self.k, prompt_granularity, catalogue, self.memory)
             replies = self._walk(
                 units, prompt_granularity, self._format(options), seed, system
             )
             for i, reply in enumerate(replies):
-                # set(): a category named twice is one occurrence, not two.
-                # CACHE-BOUND: goes away with the uniqueItems note in _format
-                for picked in set(reply["categories"]):
+                for picked in dict.fromkeys(reply["categories"]):
                     if picked in index:  # the escape category falls through here
                         out[i, index[picked]] += 1
         return out / self.n_seeds

@@ -21,11 +21,6 @@ DEFAULT_MODEL = "qwen3.8:27b"
 
 OUTPUT.mkdir(exist_ok=True)
 db = sqlite3.connect(OUTPUT / "llm_cache.sqlite")
-# The key is the request, so anything that changes a prompt by a byte throws the
-# entry away. Places where the code is shaped by that rather than by what we
-# would otherwise write are tagged CACHE-BOUND: grep for it to find everything
-# that can be simplified if these calls ever stop being expensive to redo.
-
 db.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, response TEXT)")
 
 
