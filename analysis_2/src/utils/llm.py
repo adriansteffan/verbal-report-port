@@ -18,7 +18,7 @@ client = OpenAI(
     api_key=os.environ["OPENWEBUI_API_KEY"],
 )
 
-DEFAULT_MODEL = "qwen3.6:27b"
+DEFAULT_MODEL = "qwen3.8:27b"
 
 OUTPUT.mkdir(exist_ok=True)
 db = sqlite3.connect(OUTPUT / "llm_cache.sqlite")
