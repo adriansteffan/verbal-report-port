@@ -4,6 +4,7 @@ per-unit scores are folded back into one number per category."""
 from abc import ABC, abstractmethod
 
 import numpy as np
+import pandas as pd
 from sklearn.base import BaseEstimator
 
 POOL = {"max": np.max, "mean": np.mean}
@@ -13,7 +14,7 @@ class Segmenter(BaseEstimator, ABC):
     prompt_granularity: str
 
     @abstractmethod
-    def split(self, texts: list[str]) -> list[str]: ...
+    def split(self, units: pd.DataFrame) -> list[str]: ...
 
     @abstractmethod
     def pool(self, scores: np.ndarray) -> np.ndarray:
@@ -25,8 +26,9 @@ class Transcript(Segmenter):
 
     prompt_granularity = "transcript"
 
-    def split(self, texts: list[str]) -> list[str]:
-        return ["\n\n".join(texts)] if texts else []
+    def split(self, units: pd.DataFrame) -> list[str]:
+        spoken = [t for t in units["text"] if t]
+        return ["\n\n".join(spoken)] if spoken else []
 
     def pool(self, scores: np.ndarray) -> np.ndarray:
         return scores[0]
@@ -44,7 +46,7 @@ class _Chunked(Segmenter, ABC):
 
 
 class Groups(_Chunked):
-    """Consecutive utterances, chunked."""
+    """One unit per cycle of `size` rounds."""
 
     prompt_granularity = "group"
 
@@ -52,10 +54,10 @@ class Groups(_Chunked):
         super().__init__(pooling=pooling)
         self.size = size
 
-    def split(self, texts: list[str]) -> list[str]:
+    def split(self, units: pd.DataFrame) -> list[str]:
+        cycles = (units["round"] - 1) // self.size
         return [
-            "\n\n".join(texts[i : i + self.size])
-            for i in range(0, len(texts), self.size)
+            "\n\n".join(t for t in g if t) for _, g in units["text"].groupby(cycles)
         ]
 
 
@@ -64,5 +66,5 @@ class Utterances(_Chunked):
 
     prompt_granularity = "utterance"
 
-    def split(self, texts: list[str]) -> list[str]:
-        return texts
+    def split(self, units: pd.DataFrame) -> list[str]:
+        return [t for t in units["text"] if t]

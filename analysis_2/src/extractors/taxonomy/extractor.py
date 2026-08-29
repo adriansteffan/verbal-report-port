@@ -32,11 +32,16 @@ class TaxonomyExtractor(FeatureExtractor):
         fraction of seeds that picked it."""
         units = self.segments.split(self.scope.select(participant))
         if not units:
-            return pd.DataFrame(columns=codebook.categories())
-        # provenance is set here because this is the one place that knows both
-        # the config and the participant; llm.judge reads it
-        with llm.provenance(self.config(), participant):
-            scores = self.coder.score(units, self.segments.prompt_granularity)
+            return pd.DataFrame(columns=codebook.categories(), dtype=float)  # empty
+        scores = np.full((len(units), len(codebook.categories())), np.nan)
+        spoken = [i for i, unit in enumerate(units) if unit]
+        if spoken:
+            # provenance is set here because this is the one place that knows
+            # both the config and the participant; llm.judge reads it
+            with llm.provenance(self.config(), participant):
+                scores[spoken] = self.coder.score(
+                    [units[i] for i in spoken], self.segments.prompt_granularity
+                )
         return pd.DataFrame(
             scores,
             columns=codebook.categories(),
@@ -45,6 +50,8 @@ class TaxonomyExtractor(FeatureExtractor):
 
     def _extract(self, participant: str) -> dict[str, float]:
         scores = self.unit_scores(participant).to_numpy()
-        if not len(scores):  # said nothing in this scope, so nothing to pool
-            scores = np.zeros((1, len(codebook.categories())))
+        scores = scores[~np.isnan(scores).all(axis=1)]
+        if not len(scores):
+            # silent participants should have been filterd out earlier
+            raise ValueError(f"{participant} said nothing in {self.scope!r}")
         return self.level.report(self.segments.pool(scores))

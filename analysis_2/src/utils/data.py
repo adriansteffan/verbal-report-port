@@ -9,6 +9,7 @@ from utils.paths import DF_VR, RESSOURCES
 DetectorFactory.seed = 0  # langdetect samples n-grams at random; we pin the RNG
 
 PHASE_OFFSET = {"acquisition": 0, "transfer": 24}
+LAST_ROUND = 48
 
 
 def _english_prob(text: str) -> float:
@@ -37,28 +38,31 @@ def is_artifact(text: str) -> bool:
 
 @functools.cache
 def utterances(participant: str) -> pd.DataFrame:
-    """One row per pre-debrief recording: phase, global round, text, with
-    transcription artifacts removed.
+    """One row per round of the study, holding what the participant said in
+    that round (potentially empty).
 
     This is the single definition of "what the participant actually said" -
     the cohort filter below measures the same text the extractors will see."""
+    grid = pd.RangeIndex(1, LAST_ROUND + 1, name="round")
     f = RESSOURCES / participant / "transcriptions.csv"
     if not f.exists():
         # one folder is empty, happens when someone opened the study and recorded nothing
-        return pd.DataFrame(columns=["phase", "round", "text"])
+        return pd.DataFrame({"round": grid, "text": ""})
 
     df = pd.read_csv(f).sort_values("filename", ignore_index=True)
     # drop post-debriefing recording
     df = df.loc[~df["filename"].str.contains("ruledetection")]
     parsed = df["filename"].str.extract(r"audio_\d+_(?P<phase>.+)_(?P<idx>\d+)\.wav")
     df = df.assign(
-        phase=parsed["phase"].to_numpy(),
         round=parsed["idx"].astype(float).to_numpy()
         + parsed["phase"].map(PHASE_OFFSET).to_numpy(),
         text=df["text"].fillna("").str.strip(),
     )
     df = df.loc[(df["text"] != "") & ~df["text"].map(is_artifact)]
-    return df[["phase", "round", "text"]].reset_index(drop=True)
+    # the phases we are not intrested in (instructions, practice, seqgen)
+    # have no round of their own and drop out here
+    df = df.dropna(subset=["round"]).astype({"round": int}).set_index("round")
+    return df[["text"]].reindex(grid, fill_value="").reset_index()
 
 
 @functools.cache
@@ -83,5 +87,5 @@ def analyzable_participants() -> list[str]:
         and utterances(p)["text"].str.len().sum() >= MIN_SPEECH_CHARS
         # Language is a property of the speaker, judged once on their whole
         # artifact-free transcript, where detection is reliable.
-        and _english_prob("\n\n".join(utterances(p)["text"])) > 0.5
+        and _english_prob("\n\n".join(t for t in utterances(p)["text"] if t)) > 0.5
     ]
