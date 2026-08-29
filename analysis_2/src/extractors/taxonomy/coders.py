@@ -84,29 +84,17 @@ class Coder(BaseEstimator, ABC):
             c for cluster in rng.sample(clusters, len(clusters)) for c in cluster
         ] + [codebook.ESCAPE]
 
-    def _prompt_mode(self, units, prompt_granularity, standalone, system):
-        """(per-turn prompt, system message) for _walk, given this coder's
-        memory setting.
-
-        One unit carries no history, so the conversation form would only change
-        the wording. Falling back to the standalone prompt there keeps the
-        request byte-identical to the memory-free run.
-
-        CACHE-BOUND: otherwise memory=True would just use the conversation form
-        throughout, at the cost of paying twice for single-unit scopes."""
-        if self.memory and len(units) > 1:
-            return (
-                lambda u: f'{codebook.UNIT_LABEL[prompt_granularity]}:\n"""{u}"""'
-            ), system
-        return standalone, None
-
-    def _walk(self, units, prompt, response_format, seed, system=None) -> list[dict]:
-        """Should be called by score(). One pass over the units.
+    def _walk(
+        self, units, prompt_granularity, response_format, seed, system
+    ) -> list[dict]:
+        """Should be called by score(). One pass over the units, the codebook in
+        the system message and one unit per turn.
         With memory on, each answer stays in context for the next unit."""
-        history: list[dict] = [{"role": "system", "content": system}] if system else []
+        history: list[dict] = [{"role": "system", "content": system}]
         replies = []
         for unit in units:
-            messages = history + [{"role": "user", "content": prompt(unit)}]
+            content = f'{codebook.UNIT_LABEL[prompt_granularity]}:\n"""{unit}"""'
+            messages = history + [{"role": "user", "content": content}]
             reply = llm.judge(messages, response_format, seed, self.model)
             replies.append(reply)
             if self.memory:
@@ -123,17 +111,6 @@ def _binary_system(category: str, prompt_granularity: str, examples: str) -> str
         f"{codebook.prompt(category, prompt_granularity)}\n{shots}\n"
         f"You will be sent one {label} at a time, in the order they were spoken. "
         f"For each, answer whether the category applies."
-    )
-
-
-def _binary_prompt(
-    unit: str, category: str, prompt_granularity: str, examples: str
-) -> str:
-    shots = f"\nExamples of this category:\n{examples}\n" if examples else ""
-    return (
-        f"{codebook.prompt(category, prompt_granularity)}\n{shots}\n"
-        f'{codebook.UNIT_LABEL[prompt_granularity]}:\n"""{unit}"""\n\n'
-        f"Does the category apply?"
     )
 
 
@@ -155,15 +132,10 @@ class Binary(Coder):
             rng = self._rng(seed)
             for j, category in enumerate(categories):
                 examples = codebook.examples(category, rng)
-                prompt, system = self._prompt_mode(
-                    units,
-                    prompt_granularity,
-                    standalone=lambda u, c=category, e=examples: _binary_prompt(
-                        u, c, prompt_granularity, e
-                    ),
-                    system=_binary_system(category, prompt_granularity, examples),
+                system = _binary_system(category, prompt_granularity, examples)
+                replies = self._walk(
+                    units, prompt_granularity, BINARY_FORMAT, seed, system
                 )
-                replies = self._walk(units, prompt, BINARY_FORMAT, seed, system)
                 out[:, j] += [bool(r["applies"]) for r in replies]
         return out / self.n_seeds
 
@@ -188,16 +160,6 @@ def _topk_system(k: int, prompt_granularity: str, catalogue: str) -> str:
         f"You will be sent one {label} at a time from a think-aloud experiment, "
         f"in the order it was spoken. For each, name the {k} categories that "
         f"apply most strongly."
-    )
-
-
-def _topk_prompt(unit: str, k: int, prompt_granularity: str, catalogue: str) -> str:
-    return (
-        f"Below is a catalogue of verbal behavior categories, then one "
-        f"{codebook.UNIT_LABEL[prompt_granularity].lower()} from a think-aloud experiment.\n\n"
-        f"{catalogue}\n\n"
-        f'{codebook.UNIT_LABEL[prompt_granularity]}:\n"""{unit}"""\n\n'
-        f"Name the {k} categories that apply most strongly."
     )
 
 
@@ -257,15 +219,10 @@ class TopK(Coder):
             rng = self._rng(seed)
             options = self._options(rng)
             catalogue = _catalogue(prompt_granularity, options, rng)
-            prompt, system = self._prompt_mode(
-                units,
-                prompt_granularity,
-                standalone=lambda u, c=catalogue: _topk_prompt(
-                    u, self.k, prompt_granularity, c
-                ),
-                system=_topk_system(self.k, prompt_granularity, catalogue),
+            system = _topk_system(self.k, prompt_granularity, catalogue)
+            replies = self._walk(
+                units, prompt_granularity, self._format(options), seed, system
             )
-            replies = self._walk(units, prompt, self._format(options), seed, system)
             for i, reply in enumerate(replies):
                 # set(): a category named twice is one occurrence, not two.
                 # CACHE-BOUND: goes away with the uniqueItems note in _format

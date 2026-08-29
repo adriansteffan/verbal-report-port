@@ -10,6 +10,7 @@ from extractors.random import RandomFeatureExtractor
 from pipeline import evaluate
 
 pipeline.PROGRESS = True  # per-participant bars while extracting
+EXPORT_CALLS = False  # also write out every request and reply, for reading by hand
 
 CLASSIFIERS = [
     # DummyClassifier(strategy="uniform"),
@@ -38,7 +39,7 @@ from extractors.taxonomy.extractor import TaxonomyExtractor
 from extractors.taxonomy.levels import Categories, Clusters
 from extractors.taxonomy.scopes import Acquisition, UntilDiscovery
 from extractors.taxonomy.segments import Groups, Transcript, Utterances
-from pipeline import features
+from pipeline import export_calls, features
 
 # for memory in [False, True]:
 #     for scope in [Acquisition(), UntilDiscovery()]:
@@ -77,5 +78,7 @@ SWEEP = [
 
 for extractor in SWEEP:
     features(extractor)
+    if EXPORT_CALLS:
+        export_calls(extractor)
     for classifier in CLASSIFIERS:
         evaluate(make_pipeline(extractor, classifier), n_permutations=500)

@@ -7,7 +7,7 @@ from sklearn import config_context
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 
-from utils import data
+from utils import data, llm
 from utils.paths import OUTPUT
 
 PROGRESS = False  # main.py turns this on
@@ -46,6 +46,45 @@ def features(extractor, limit: int | None = None) -> pd.DataFrame:
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path)
     print(f"{len(df)} participants x {df.shape[1] - 1} features -> {path.name}")
+    return df
+
+
+def export_calls(extractor, limit: int | None = None) -> pd.DataFrame:
+    """Every request this config sends and the reply it gets, for reading by
+    hand. Every call is a cache hit once features() has been through, so free"""
+    pids, labels = cohort(limit)
+    rows = []
+    for pid in pids:
+        with llm.capture() as sent:
+            scores = extractor.unit_scores(pid)
+        # a unit the participant was silent through is never sent and scores
+        # NaN, so the rows that survive name the units the calls were about
+        spoken = scores.dropna(how="all").index.tolist()
+        for n, call in enumerate(sent):
+            messages = call["messages"]
+            rows.append(
+                {
+                    "participant": pid,
+                    "aware": labels[pid],
+                    # each seed makes one pass over the units, in order
+                    "unit": spoken[n % len(spoken)],
+                    "seed": call["seed"],
+                    "system": next(
+                        (m["content"] for m in messages if m["role"] == "system"), ""
+                    ),
+                    "conversation": "\n\n".join(
+                        f"[{m['role']}]\n{m['content']}"
+                        for m in messages
+                        if m["role"] != "system"
+                    ),
+                    "response": call["response"],
+                }
+            )
+    df = pd.DataFrame(rows).sort_values(["participant", "unit", "seed"])
+    path = OUTPUT / "review" / _filename(extractor.config())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
+    print(f"{len(df)} calls -> review/{path.name}")
     return df
 
 

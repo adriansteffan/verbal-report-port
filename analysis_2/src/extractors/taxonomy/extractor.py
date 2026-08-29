@@ -7,7 +7,6 @@ from extractors.taxonomy.coders import Coder
 from extractors.taxonomy.levels import Level
 from extractors.taxonomy.scopes import Scope
 from extractors.taxonomy.segments import Segmenter
-from utils import llm
 
 
 class TaxonomyExtractor(FeatureExtractor):
@@ -32,16 +31,14 @@ class TaxonomyExtractor(FeatureExtractor):
         fraction of seeds that picked it."""
         units = self.segments.split(self.scope.select(participant))
         if not units:
-            return pd.DataFrame(columns=codebook.categories(), dtype=float)  # empty
+            # dtype, or _extract's isnan gets an object array
+            return pd.DataFrame(columns=codebook.categories(), dtype=float)
         scores = np.full((len(units), len(codebook.categories())), np.nan)
         spoken = [i for i, unit in enumerate(units) if unit]
         if spoken:
-            # provenance is set here because this is the one place that knows
-            # both the config and the participant; llm.judge reads it
-            with llm.provenance(self.config(), participant):
-                scores[spoken] = self.coder.score(
-                    [units[i] for i in spoken], self.segments.prompt_granularity
-                )
+            scores[spoken] = self.coder.score(
+                [units[i] for i in spoken], self.segments.prompt_granularity
+            )
         return pd.DataFrame(
             scores,
             columns=codebook.categories(),

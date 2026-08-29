@@ -1,7 +1,6 @@
 """Shared client for LLM extracted features."""
 
 import contextlib
-import contextvars
 import hashlib
 import json
 import os
@@ -27,32 +26,23 @@ db = sqlite3.connect(OUTPUT / "llm_cache.sqlite")
 # would otherwise write are tagged CACHE-BOUND: grep for it to find everything
 # that can be simplified if these calls ever stop being expensive to redo.
 
-# the request is stored next to the reply so a run can be read back afterwards
-db.execute(
-    "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, model TEXT,"
-    " seed INTEGER, messages TEXT, response TEXT)"
-)
+db.execute("CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, response TEXT)")
 
 
-# which (config, participant) used which call, for potential reconstruction
-db.execute(
-    "CREATE TABLE IF NOT EXISTS calls (key TEXT, config TEXT, participant TEXT,"
-    " PRIMARY KEY (key, config, participant))"
-)
-
-
-_provenance: contextvars.ContextVar[tuple[str, str]] = contextvars.ContextVar(
-    "provenance", default=("", "")
-)
+_captured: list[dict] | None = None
 
 
 @contextlib.contextmanager
-def provenance(config: str, participant: str):
-    token = _provenance.set((config, participant))
+def capture():
+    """Collect every request made inside the block, with its reply, in order.
+    pipeline.export_calls() uses this to read back what a config asked.
+    Contextvars would be cleaner, but we don't need multithreading anyways"""
+    global _captured
+    _captured = []
     try:
-        yield
+        yield _captured
     finally:
-        _provenance.reset(token)
+        _captured = None
 
 
 def judge(
@@ -65,13 +55,6 @@ def judge(
     key = hashlib.sha256(
         json.dumps([model, messages, response_format, seed], sort_keys=True).encode()
     ).hexdigest()
-
-    config, participant = _provenance.get()
-    if config or participant:
-        db.execute(
-            "INSERT OR IGNORE INTO calls VALUES (?, ?, ?)", (key, config, participant)
-        )
-        db.commit()  # bookkeeping
 
     hit = db.execute("SELECT response FROM cache WHERE key = ?", (key,)).fetchone()
 
@@ -97,9 +80,9 @@ def judge(
         ) from e
 
     if not hit:
-        db.execute(
-            "INSERT OR REPLACE INTO cache VALUES (?, ?, ?, ?, ?)",
-            (key, model, seed, json.dumps(messages), content),
-        )
+        db.execute("INSERT OR REPLACE INTO cache VALUES (?, ?)", (key, content))
         db.commit()
+
+    if _captured is not None:
+        _captured.append({"seed": seed, "messages": messages, "response": content})
     return parsed
