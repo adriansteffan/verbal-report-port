@@ -6,10 +6,14 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 import pipeline
+from extractors import base
 from extractors.random import RandomFeatureExtractor
 from pipeline import evaluate
 
 pipeline.PROGRESS = True  # per-participant bars while extracting
+MODEL = "phi4-mini:latest"
+# MODEL = "qwen3.8:27b"  # the main model
+base.WORKERS = 4  # participants extracted at once, free but for the ordering
 EXPORT_CALLS = False  # also write out every request and reply, for reading by hand
 
 CLASSIFIERS = [
@@ -52,20 +56,12 @@ from pipeline import export_calls, features
 #                 )
 
 
-for level in [Categories(), Clusters()]:
-    features(
-        TaxonomyExtractor(
-            Acquisition(),
-            Utterances(),
-            TopK(k=1, n_seeds=3, shuffle="clustered"),
-            level,
-        )
-    )
-
-
 SWEEP = [
     TaxonomyExtractor(
-        scope, segments, TopK(k=3, n_seeds=5, memory=memory, shuffle="clustered"), level
+        scope,
+        segments,
+        TopK(k=3, n_seeds=5, memory=memory, shuffle="clustered", model=MODEL),
+        level,
     )
     for scope in [Acquisition(), UntilDiscovery()]
     for level in [Categories(), Clusters(across="max")]
@@ -79,7 +75,7 @@ SWEEP = [
     TaxonomyExtractor(
         Acquisition(),
         Utterances(pooling=pooling),
-        TopK(k=1, n_seeds=3, shuffle="clustered"),
+        TopK(k=1, n_seeds=3, shuffle="clustered", model=MODEL),
         level,
     )
     for level in [Categories(), Clusters(across="max")]

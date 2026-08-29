@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -8,6 +9,9 @@ from tqdm import tqdm
 
 # In memory feature vector cache keyed on (extractor config, participant)
 _CACHE: dict = {}
+
+# How many participants to extract at once. default value, main.py overrides it
+WORKERS = 1
 
 
 class FeatureExtractor(BaseEstimator, TransformerMixin, ABC):
@@ -31,21 +35,26 @@ class FeatureExtractor(BaseEstimator, TransformerMixin, ABC):
         names for sklearn but this keeps them, for export and for reading."""
         participants = list(participants)
         config = self.config()
-        bar = tqdm(
-            participants,
-            desc="  extracting",
-            unit="p",
-            disable=not progress,
-            # redraw every iteration
-            miniters=1,
-            mininterval=0,
-        )
-        rows = []
-        for participant in bar:
+
+        def extract(participant):
             key = (config, participant)
             if key not in _CACHE:
                 _CACHE[key] = self._extract(participant)
-            rows.append(_CACHE[key])
+            return _CACHE[key]
+
+        with ThreadPoolExecutor(WORKERS) as pool:
+            rows = list(
+                tqdm(
+                    pool.map(extract, participants),
+                    desc="  extracting",
+                    unit="p",
+                    total=len(participants),
+                    disable=not progress,
+                    # redraw every iteration
+                    miniters=1,
+                    mininterval=0,
+                )
+            )
         # via DataFrame so columns align by feature name, not by dict order
         return pd.DataFrame(rows, index=participants)
 
