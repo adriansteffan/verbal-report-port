@@ -1,18 +1,16 @@
-from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
 import pipeline
 from extractors import base
-from extractors.random import RandomFeatureExtractor
 from pipeline import evaluate
 
 pipeline.PROGRESS = True  # per-participant bars while extracting
 MODEL = "phi4-mini:latest"
 # MODEL = "qwen3.8:27b"  # the main model
 base.WORKERS = 4  # participants extracted at once, free but for the ordering
-EXPORT_CALLS = False  # also write out every request and reply, for reading by hand
+EXPORT_CALLS = True  # also write out every request and reply, for reading by hand
 
 CLASSIFIERS = [
     # DummyClassifier(strategy="uniform"),

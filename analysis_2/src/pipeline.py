@@ -1,4 +1,5 @@
 import hashlib
+import json
 import re
 
 import numpy as np
@@ -28,6 +29,17 @@ def slug(config: str) -> str:
     return re.sub(r"[^0-9A-Za-z]+", "-", config).strip("-")[:200]
 
 
+def _calls_config(extractor) -> str:
+    """Names the set of requests an extractor makes, so configs that ask the
+    model the same things share one calls/per_unit file.
+    Only coder, scope and segments shape a request."""
+    with config_context(print_changed_only=False):  # spell out every parameter
+        config = " ".join(
+            repr(o) for o in (extractor.coder, extractor.scope, extractor.segments)
+        )
+    return re.sub(r"pooling='\w+', ?", "", config)
+
+
 def _filename(config: str) -> str:
     return f"{slug(config)}-{hashlib.sha256(config.encode()).hexdigest()[:8]}.csv"
 
@@ -54,7 +66,7 @@ def export_calls(extractor, limit: int | None = None) -> pd.DataFrame:
     """Every request this config sends and the reply it gets, for reading by
     hand. Every call is a cache hit once features() has been through, so free"""
     pids, labels = cohort(limit)
-    rows = []
+    rows, width = [], 0
     for pid in pids:
         with llm.capture() as sent:
             scores = extractor.unit_scores(pid)
@@ -63,6 +75,9 @@ def export_calls(extractor, limit: int | None = None) -> pd.DataFrame:
         spoken = scores.dropna(how="all").index.tolist()
         for n, call in enumerate(sent):
             messages = call["messages"]
+            reply, _ = json.JSONDecoder().raw_decode(call["response"])
+            picked = reply.get("categories", [])
+            width = max(width, len(picked))
             rows.append(
                 {
                     "participant": pid,
@@ -70,6 +85,8 @@ def export_calls(extractor, limit: int | None = None) -> pd.DataFrame:
                     # each seed makes one pass over the units, in order
                     "unit": spoken[n % len(spoken)],
                     "seed": call["seed"],
+                    **{f"rank_{i + 1}": c for i, c in enumerate(picked)},
+                    "reasoning": reply.get("reasoning", ""),
                     "system": next(
                         (m["content"] for m in messages if m["role"] == "system"), ""
                     ),
@@ -78,11 +95,23 @@ def export_calls(extractor, limit: int | None = None) -> pd.DataFrame:
                         for m in messages
                         if m["role"] != "system"
                     ),
-                    "response": call["response"],
                 }
             )
-    df = pd.DataFrame(rows).sort_values(["participant", "unit", "seed"])
-    path = OUTPUT / "review" / _filename(extractor.config())
+    df = pd.DataFrame(rows)
+    ranks = [f"rank_{i + 1}" for i in range(width)]
+    df = df[
+        [
+            "participant",
+            "aware",
+            "unit",
+            "seed",
+            "system",
+            "conversation",
+            *ranks,
+            "reasoning",
+        ]
+    ].sort_values(["participant", "unit", "seed"])
+    path = OUTPUT / "review" / _filename(_calls_config(extractor))
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     print(f"{len(df)} calls -> review/{path.name}")
@@ -148,13 +177,7 @@ def unit_features(extractor, limit: int | None = None) -> pd.DataFrame:
     ]
     df = pd.DataFrame(rows)
 
-    with config_context(print_changed_only=False):  # spell out every parameter
-        config = " ".join(
-            repr(o) for o in (extractor.coder, extractor.scope, extractor.segments)
-        )
-    config = re.sub(r"pooling='\w+', ?", "", config)
-
-    path = OUTPUT / "features" / "per-unit" / _filename(config)
+    path = OUTPUT / "features" / "per-unit" / _filename(_calls_config(extractor))
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
     print(f"{len(df)} units x {len(df.columns) - 4} categories -> per-unit/{path.name}")
