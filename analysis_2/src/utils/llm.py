@@ -20,7 +20,7 @@ client = OpenAI(
 
 DEFAULT_MODEL = "qwen3.8:27b"
 TRIES = 3  # a reply that never closes its JSON is worth asking again; super rare model failure failsafe
-MAX_TOKENS = 2500
+MAX_TOKENS = 8000
 
 OUTPUT.mkdir(exist_ok=True)
 db = sqlite3.connect(OUTPUT / "llm_cache.sqlite", check_same_thread=False)
