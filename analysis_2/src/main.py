@@ -60,22 +60,18 @@ SWEEP = [
     TaxonomyExtractor(
         scope,
         segments,
-        TopK(k=3, n_seeds=5, memory=memory, shuffle="clustered", model=MODEL),
+        TopK(k=3, n_seeds=5, memory=False, shuffle="clustered", model=MODEL),
         level,
     )
     for scope in [Acquisition(), UntilDiscovery()]
     for level in [Categories(), Clusters(across="max")]
-    for segments, memory in [(Transcript(), False)]
-    + [
-        (Groups(size=6, pooling=pooling), memory)
-        for pooling in ["max", "mean"]
-        for memory in [False, True]
-    ]
+    for segments in [(Transcript())]
+    + [(Groups(size=6, pooling=pooling)) for pooling in ["max", "mean"]]
 ] + [
     TaxonomyExtractor(
         Acquisition(),
         Utterances(pooling=pooling),
-        TopK(k=1, n_seeds=3, shuffle="clustered", model=MODEL),
+        TopK(k=1, n_seeds=5, shuffle="clustered", model=MODEL),
         level,
     )
     for level in [Categories(), Clusters(across="max")]
