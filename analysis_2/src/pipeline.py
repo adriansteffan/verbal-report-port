@@ -4,6 +4,7 @@ import re
 import numpy as np
 import pandas as pd
 from sklearn import config_context
+from sklearn.base import clone
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 
@@ -107,6 +108,24 @@ def _loo_scores(model, X, y) -> np.ndarray:
     return scores[:, list(np.unique(y)).index(1)] if scores.ndim > 1 else scores
 
 
+def _rough_fit_scores(model, X, y) -> np.ndarray:
+    """The same scores in a "training" sample, from a single fit on everything."""
+    fitted = clone(model).fit(X, y)
+    method = (
+        "predict_proba" if hasattr(fitted, "predict_proba") else "decision_function"
+    )
+    scores = getattr(fitted, method)(X)
+    return scores[:, list(np.unique(y)).index(1)] if scores.ndim > 1 else scores
+
+
+def _metrics(model, X, y) -> dict[str, float]:
+    """Overal stats for a given feature extraction"""
+    return {
+        "auc": float(roc_auc_score(y, _loo_scores(model, X, y))),
+        "rough_train_auc": float(roc_auc_score(y, _rough_fit_scores(model, X, y))),
+    }
+
+
 def unit_features(extractor, limit: int | None = None) -> pd.DataFrame:
     """Per-unit scores for a chunked segmenter, in the same shape as features()
     but keyed by (participant, unit)
@@ -142,15 +161,21 @@ def unit_features(extractor, limit: int | None = None) -> pd.DataFrame:
     return df
 
 
-def _write_permutations(model: str, auc: float, null: np.ndarray) -> None:
+_RESULTS: list[dict] = []
+
+
+def results_table() -> pd.DataFrame:
+    """Every evaluate() of the run in one table."""
+    df = pd.DataFrame(_RESULTS)
+    df.to_csv(OUTPUT / "results.csv", index=False)
+    print(f"{len(df)} models -> results.csv")
+    return df
+
+
+def _write_permutations(model: str, runs: list[dict]) -> None:
     """The null the p-value is read against, one row per run. Permutation 0 is
     the real labels, the rest are shuffled."""
-    df = pd.DataFrame(
-        {
-            "permutation": range(len(null) + 1),
-            "auc": np.concatenate([[auc], null]),
-        }
-    )
+    df = pd.DataFrame(runs)
     path = OUTPUT / "permutations" / _filename(model)
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(path, index=False)
@@ -162,27 +187,34 @@ def evaluate(model, limit: int | None = None, n_permutations: int = 0, seed: int
     X = np.array(pids).reshape(-1, 1)
     y = labels[pids].to_numpy()
 
-    auc = float(roc_auc_score(y, _loo_scores(model, X, y)))
+    observed = _metrics(model, X, y)
     result = {
         "model": _name(model),
         "n": len(y),
         "pos_rate": float(y.mean()),
-        "auc": auc,
+        **observed,
+        "n_permutations": n_permutations,
     }
 
     if n_permutations:
         rng = np.random.default_rng(seed)
-        null = np.empty(n_permutations)
+        runs = [{"permutation": 0, **observed}]
         for i in range(n_permutations):
-            y_perm = rng.permutation(y)
-            null[i] = roc_auc_score(y_perm, _loo_scores(model, X, y_perm))
+            runs.append(
+                {"permutation": i + 1, **_metrics(model, X, rng.permutation(y))}
+            )
+        null = np.array([r["auc"] for r in runs[1:]])
         # + 1 in formula to prevent zero p-value
-        result["p"] = float((np.sum(null >= auc) + 1) / (n_permutations + 1))
-        _write_permutations(result["model"], auc, null)
+        result["p"] = float(
+            (np.sum(null >= observed["auc"]) + 1) / (n_permutations + 1)
+        )
+        _write_permutations(result["model"], runs)
+
+    _RESULTS.append(result)
 
     print(
         f"{result['model']}: n={result['n']} pos_rate={result['pos_rate']:.2f} "
-        f"auc={result['auc']:.3f}"
+        f"auc={result['auc']:.3f} rough_train={result['rough_train_auc']:.3f}"
         + (
             f" p={result['p']:.3f} ({n_permutations} permutations)"
             if n_permutations
