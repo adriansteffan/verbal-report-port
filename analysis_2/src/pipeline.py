@@ -195,6 +195,21 @@ def results_table() -> pd.DataFrame:
     return df
 
 
+def _write_predictions(model: str, participants, y, scores, predicted) -> None:
+    """What the model made of each participant while it had not seen them: the
+    score the auc is read off, and the class it would have called them."""
+    path = OUTPUT / "predictions" / _filename(model)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {
+            "participant": participants,
+            "aware": y,
+            "score": scores,
+            "predicted": predicted,
+        }
+    ).to_csv(path, index=False)
+
+
 def _write_permutations(model: str, runs: list[dict]) -> None:
     """The null the p-value is read against, one row per run. Permutation 0 is
     the real labels, the rest are shuffled."""
@@ -218,6 +233,14 @@ def evaluate(model, limit: int | None = None, n_permutations: int = 0, seed: int
         **observed,
         "n_permutations": n_permutations,
     }
+
+    _write_predictions(
+        result["model"],
+        pids,
+        y,
+        _loo_scores(model, X, y),
+        cross_val_predict(model, X, y, cv=LeaveOneOut()),
+    )
 
     if n_permutations:
         rng = np.random.default_rng(seed)
