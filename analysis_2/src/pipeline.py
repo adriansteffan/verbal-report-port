@@ -142,18 +142,32 @@ def unit_features(extractor, limit: int | None = None) -> pd.DataFrame:
     return df
 
 
+def _write_permutations(model: str, auc: float, null: np.ndarray) -> None:
+    """The null the p-value is read against, one row per run. Permutation 0 is
+    the real labels, the rest are shuffled."""
+    df = pd.DataFrame(
+        {
+            "permutation": range(len(null) + 1),
+            "auc": np.concatenate([[auc], null]),
+        }
+    )
+    path = OUTPUT / "permutations" / _filename(model)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(path, index=False)
+
+
 def evaluate(model, limit: int | None = None, n_permutations: int = 0, seed: int = 0):
     """Leave-one-out AUC, with an optional permutation p-value."""
     pids, labels = cohort(limit)
     X = np.array(pids).reshape(-1, 1)
     y = labels[pids].to_numpy()
 
-    auc = roc_auc_score(y, _loo_scores(model, X, y))
+    auc = float(roc_auc_score(y, _loo_scores(model, X, y)))
     result = {
         "model": _name(model),
         "n": len(y),
         "pos_rate": float(y.mean()),
-        "auc": float(auc),
+        "auc": auc,
     }
 
     if n_permutations:
@@ -164,6 +178,7 @@ def evaluate(model, limit: int | None = None, n_permutations: int = 0, seed: int
             null[i] = roc_auc_score(y_perm, _loo_scores(model, X, y_perm))
         # + 1 in formula to prevent zero p-value
         result["p"] = float((np.sum(null >= auc) + 1) / (n_permutations + 1))
+        _write_permutations(result["model"], auc, null)
 
     print(
         f"{result['model']}: n={result['n']} pos_rate={result['pos_rate']:.2f} "

@@ -12,3 +12,7 @@ dependencies = [
     "openpyxl>=3.1.5",  # never imported: the engine pd.read_excel needs for the codebook
     "tqdm>=4.70.0",
 ]
+
+[tool.ruff]
+# so "utils" and "extractors" sort as ours, whatever directory ruff runs from
+src = ["src"]
