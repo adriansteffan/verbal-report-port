@@ -4,13 +4,13 @@ from sklearn.preprocessing import StandardScaler
 
 import pipeline
 from extractors import base
-from pipeline import evaluate
+# from pipeline import evaluate
 
-pipeline.PROGRESS = True  # per-participant bars while extracting
-MODEL = "phi4-mini:latest"
-# MODEL = "qwen3.8:27b"  # the main model
-base.WORKERS = 4  # participants extracted at once, free but for the ordering
-EXPORT_CALLS = True  # also write out every request and reply, for reading by hand
+pipeline.PROGRESS = True
+# MODEL = "phi4-mini:latest"
+MODEL = "qwen3.8:27b"
+base.WORKERS = 1
+EXPORT_CALLS = True
 
 CLASSIFIERS = [
     # DummyClassifier(strategy="uniform"),
@@ -49,15 +49,13 @@ SWEEP = [
     for level in [Categories(), Clusters(across="max"), Clusters(across="mean")]
 ]
 
-# for extractor in SWEEP:
-#    features(extractor)
 
 for extractor in SWEEP:
     features(extractor)
     unit_features(extractor)
     if EXPORT_CALLS:
         export_calls(extractor)
-    for classifier in CLASSIFIERS:
-        evaluate(make_pipeline(extractor, classifier), n_permutations=500)
+#    for classifier in CLASSIFIERS:
+#        evaluate(make_pipeline(extractor, classifier), n_permutations=500)
 
-results_table()
+# results_table()
